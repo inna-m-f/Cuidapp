@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/theme.dart';
+import '../../services/database_service.dart';
 import 'patient_detail_screen.dart';
 
 class HomeScreen extends StatelessWidget {
-  const HomeScreen({Key? key}) : super(key: key);
+  HomeScreen({Key? key}) : super(key: key);
+
+  final DatabaseService _dbService = DatabaseService();
 
   @override
   Widget build(BuildContext context) {
@@ -18,7 +22,7 @@ class HomeScreen extends StatelessWidget {
       ),
       body: Column(
         children: [
-          // Barra de búsqueda flotante
+          
           Padding(
             padding: const EdgeInsets.all(20.0),
             child: TextField(
@@ -44,29 +48,65 @@ class HomeScreen extends StatelessWidget {
             ),
           ),
 
-          // Lista de pacientes 
+          // Lista de pacientes desde Firestore
           Expanded(
-            child: ListView(
-              padding: const EdgeInsets.symmetric(horizontal: 20.0),
-              children: [
-                _buildPatientCard(
-                  context, // Pasamos el context
-                  initials: 'MG',
-                  name: 'María González',
-                  details: '78 años • Habitación 102',
-                  status: 'Estable',
-                  progressChips: ['4/5', '3/3', '2/2'],
-                ),
-                const SizedBox(height: 15),
-                _buildPatientCard(
-                  context, 
-                  initials: 'JM',
-                  name: 'José Martínez Ruiz',
-                  details: '82 años',
-                  status: 'Atención',
-                  progressChips: ['0/1'],
-                ),
-              ],
+            child: StreamBuilder<QuerySnapshot>(
+              stream: _dbService.getPacientesStream(),
+              builder: (context, snapshot) {
+                // Estado 1: Cargando datos
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(
+                    child: CircularProgressIndicator(color: AppTheme.blue),
+                  );
+                }
+
+                
+                if (snapshot.hasError) {
+                  return const Center(
+                    child: Text(
+                      'Error al cargar la información',
+                      style: TextStyle(color: Colors.redAccent),
+                    ),
+                  );
+                }
+
+                
+                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                  return const Center(
+                    child: Text(
+                      'No hay pacientes registrados.',
+                      style: TextStyle(color: Colors.black54, fontSize: 16),
+                    ),
+                  );
+                }
+
+                
+                return ListView.separated(
+                  padding: const EdgeInsets.symmetric(horizontal: 20.0),
+                  itemCount: snapshot.data!.docs.length,
+                  separatorBuilder: (context, index) => const SizedBox(height: 15),
+                  itemBuilder: (context, index) {
+                    var doc = snapshot.data!.docs[index];
+                    var data = doc.data() as Map<String, dynamic>;
+
+                    // Evita nulos si un campo falta en Firebase
+                    String initials = data['initials'] ?? '';
+                    String name = data['name'] ?? 'Sin nombre';
+                    String details = data['details'] ?? '';
+                    String status = data['status'] ?? 'Sin estado';
+                    List<String> progressChips = List<String>.from(data['progressChips'] ?? []);
+
+                    return _buildPatientCard(
+                      context,
+                      initials: initials,
+                      name: name,
+                      details: details,
+                      status: status,
+                      progressChips: progressChips,
+                    );
+                  },
+                );
+              },
             ),
           ),
         ],
@@ -74,6 +114,7 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
+  
   Widget _buildPatientCard(
     BuildContext context, {
     required String initials,
