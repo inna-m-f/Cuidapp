@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'core/theme.dart';
 import 'ui/screens/login_screen.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // TODO: Inicializar Firebase aquí más adelante
+  
+
+  await Firebase.initializeApp(); 
+  
   runApp(const CuidApp());
 }
 
@@ -17,7 +21,7 @@ class CuidApp extends StatelessWidget {
       title: 'CuidApp',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.theme,
-      home: const LoginScreen(), // Inyectamos la nueva pantalla de Login
+      home: const LoginScreen(),
     );
   }
 }
