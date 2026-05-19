@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'core/theme.dart';
+import 'ui/screens/login_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-
+  // TODO: Inicializar Firebase aquí más adelante
   runApp(const CuidApp());
 }
 
@@ -16,11 +17,7 @@ class CuidApp extends StatelessWidget {
       title: 'CuidApp',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.theme,
-      home: const Scaffold(
-        body: Center(
-          child: Text('CuidApp Inicializada Correctamente'),
-        ),
-      ),
+      home: const LoginScreen(), // Inyectamos la nueva pantalla de Login
     );
   }
 }
