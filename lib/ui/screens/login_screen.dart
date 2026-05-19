@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../core/theme.dart';
+import 'home_screen.dart'; 
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({Key? key}) : super(key: key);
@@ -12,7 +13,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // Fondo azul base (cabecera)
+
       backgroundColor: AppTheme.blue,
       body: SafeArea(
         bottom: false,
@@ -45,7 +46,7 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
             ),
             
-            // Sección Inferior (Formulario Blanco)
+
             Expanded(
               child: Container(
                 width: double.infinity,
@@ -61,7 +62,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Label y TextField RUT
+                      // RUT
                       const Text(
                         'RUT',
                         style: TextStyle(
@@ -79,7 +80,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       const SizedBox(height: 25),
                       
-                      // Label y TextField Nombre del centro
+                      // Nombre del centro
                       const Text(
                         'Nombre del centro',
                         style: TextStyle(
@@ -97,12 +98,14 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       const SizedBox(height: 40),
                       
-                      // Botón Ingresar Verde
+                      // Botón 
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton(
                           onPressed: () {
-                            // TODO: Implementar lógica de validación e inicio de sesión
+                            Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const HomeScreen()),
+                            );
+                          
                           },
                           child: const Text(
                             'Ingresar',
