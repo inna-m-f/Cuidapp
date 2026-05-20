@@ -4,7 +4,7 @@ import '../../core/theme.dart';
 import '../../services/database_service.dart';
 
 class PatientDetailScreen extends StatelessWidget {
-  final String patientId; // <-- Recibimos el ID
+  final String patientId;
   final String initials;
   final String name;
   final String details;
@@ -49,7 +49,6 @@ class PatientDetailScreen extends StatelessWidget {
             ),
             const SizedBox(height: 15),
             
-            // Lista de Tareas Reactiva
             Expanded(
               child: StreamBuilder<QuerySnapshot>(
                 stream: _dbService.getPatientTasksStream(patientId),
@@ -88,8 +87,14 @@ class PatientDetailScreen extends StatelessWidget {
               width: double.infinity,
               height: 55,
               child: ElevatedButton(
+                
                 onPressed: () {
-                  // TODO: Lógica para agregar tarea (Próximo hito)
+                  showModalBottomSheet(
+                    context: context,
+                    isScrollControlled: true, 
+                    backgroundColor: Colors.transparent,
+                    builder: (context) => _AddTaskModal(patientId: patientId),
+                  );
                 },
                 child: const Text('+ Añadir tarea', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               ),
@@ -100,7 +105,6 @@ class PatientDetailScreen extends StatelessWidget {
     );
   }
 
-  // Componente de tarea actualizado para interactuar directamente con Firestore
   Widget _buildTaskTile(String taskId, String title, String time, bool isChecked) {
     return Container(
       decoration: BoxDecoration(
@@ -114,7 +118,6 @@ class PatientDetailScreen extends StatelessWidget {
         value: isChecked,
         onChanged: (bool? newValue) {
           if (newValue != null) {
-            // Actualización directa a la base de datos
             _dbService.updateTaskStatus(patientId, taskId, newValue);
           }
         },
@@ -139,6 +142,111 @@ class PatientDetailScreen extends StatelessWidget {
         controlAffinity: ListTileControlAffinity.leading,
         contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+      ),
+    );
+  }
+}
+
+
+//Formulario para Tareas
+class _AddTaskModal extends StatefulWidget {
+  final String patientId;
+
+  const _AddTaskModal({Key? key, required this.patientId}) : super(key: key);
+
+  @override
+  State<_AddTaskModal> createState() => _AddTaskModalState();
+}
+
+class _AddTaskModalState extends State<_AddTaskModal> {
+  final TextEditingController _titleController = TextEditingController();
+  final TextEditingController _timeController = TextEditingController();
+  final DatabaseService _dbService = DatabaseService();
+  bool _isLoading = false;
+
+  void _saveTask() async {
+    if (_titleController.text.trim().isEmpty || _timeController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Por favor completa todos los campos'), backgroundColor: Colors.red),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      await _dbService.addTask(
+        widget.patientId,
+        _titleController.text.trim(),
+        _timeController.text.trim(),
+      );
+      
+      if (!mounted) return;
+      Navigator.pop(context); 
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al guardar: $e'), backgroundColor: Colors.red),
+      );
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _timeController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+     
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: Container(
+        decoration: const BoxDecoration(
+          color: AppTheme.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(35)),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 40),
+        child: Column(
+          mainAxisSize: MainAxisSize.min, 
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Agregar tarea', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.black87)),
+            const SizedBox(height: 30),
+            
+            const Text('Nombre de la tarea', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 10),
+            TextField(
+              controller: _titleController,
+              decoration: const InputDecoration(hintText: 'Ej: Tomar Aspirina 10mg'),
+            ),
+            const SizedBox(height: 20),
+            
+            const Text('Horario', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 10),
+            TextField(
+              controller: _timeController,
+              keyboardType: TextInputType.datetime,
+              decoration: const InputDecoration(hintText: 'Ej: 14:00'),
+            ),
+            const SizedBox(height: 40),
+            
+            SizedBox(
+              width: double.infinity,
+              height: 55,
+              child: ElevatedButton(
+                onPressed: _isLoading ? null : _saveTask,
+                child: _isLoading 
+                  ? const CircularProgressIndicator(color: AppTheme.white)
+                  : const Text('Guardar', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
