@@ -24,4 +24,8 @@ class AuthService {
       throw 'Ocurrió un error inesperado al conectar.';
     }
   }
+  //cerrar sesión
+  Future<void> signOut() async {
+    await _auth.signOut();
+  }
 }

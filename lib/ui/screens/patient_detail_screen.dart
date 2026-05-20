@@ -105,43 +105,61 @@ class PatientDetailScreen extends StatelessWidget {
     );
   }
 
+ 
   Widget _buildTaskTile(String taskId, String title, String time, bool isChecked) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppTheme.white,
-        borderRadius: BorderRadius.circular(15),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 8, offset: const Offset(0, 3)),
-        ],
+    return Dismissible(
+      key: Key(taskId),
+      direction: DismissDirection.endToStart, // Solo deslizar de derecha a izquierda
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        decoration: BoxDecoration(
+          color: Colors.redAccent,
+          borderRadius: BorderRadius.circular(15),
+        ),
+        child: const Icon(Icons.delete, color: Colors.white, size: 28),
       ),
-      child: CheckboxListTile(
-        value: isChecked,
-        onChanged: (bool? newValue) {
-          if (newValue != null) {
-            _dbService.updateTaskStatus(patientId, taskId, newValue);
-          }
-        },
-        activeColor: AppTheme.green,
-        checkColor: AppTheme.white,
-        title: Text(
-          title,
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 15,
-            decoration: isChecked ? TextDecoration.lineThrough : null,
-            color: isChecked ? Colors.grey.shade400 : Colors.black87,
-          ),
+      onDismissed: (direction) {
+        // Llamada al servicio de eliminación en Firestore
+        _dbService.deleteTask(patientId, taskId);
+      },
+      child: Container(
+        decoration: BoxDecoration(
+          color: AppTheme.white,
+          borderRadius: BorderRadius.circular(15),
+          boxShadow: [
+            BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 8, offset: const Offset(0, 3)),
+          ],
         ),
-        subtitle: Text(
-          time,
-          style: TextStyle(
-            color: isChecked ? Colors.grey.shade400 : Colors.black54,
-            fontWeight: FontWeight.w500,
+        child: CheckboxListTile(
+          value: isChecked,
+          onChanged: (bool? newValue) {
+            if (newValue != null) {
+              _dbService.updateTaskStatus(patientId, taskId, newValue);
+            }
+          },
+          activeColor: AppTheme.green,
+          checkColor: AppTheme.white,
+          title: Text(
+            title,
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 15,
+              decoration: isChecked ? TextDecoration.lineThrough : null,
+              color: isChecked ? Colors.grey.shade400 : Colors.black87,
+            ),
           ),
+          subtitle: Text(
+            time,
+            style: TextStyle(
+              color: isChecked ? Colors.grey.shade400 : Colors.black54,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          controlAffinity: ListTileControlAffinity.leading,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
         ),
-        controlAffinity: ListTileControlAffinity.leading,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
       ),
     );
   }

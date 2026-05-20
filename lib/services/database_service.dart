@@ -25,4 +25,9 @@ class DatabaseService {
       'isCompleted': false, 
     });
   }
+
+  //Eliminar una tarea
+  Future<void> deleteTask(String patientId, String taskId) async {
+    await _db.collection('pacientes').doc(patientId).collection('tareas').doc(taskId).delete();
+  }
 }

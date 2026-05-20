@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/theme.dart';
 import '../../services/database_service.dart';
+import '../../services/auth_service.dart';
+import 'login_screen.dart';
 import 'patient_detail_screen.dart';
 
 class HomeScreen extends StatelessWidget {
@@ -19,6 +21,24 @@ class HomeScreen extends StatelessWidget {
           style: TextStyle(fontWeight: FontWeight.bold, color: AppTheme.white),
         ),
         automaticallyImplyLeading: false,
+        actions: [
+          // Botón de Cierre de Sesión Seguro (Hito 8)
+          IconButton(
+            icon: const Icon(Icons.logout, color: AppTheme.white),
+            onPressed: () async {
+              await AuthService().signOut();
+              
+              if (!context.mounted) return;
+              
+              
+              Navigator.pushAndRemoveUntil(
+                context,
+                MaterialPageRoute(builder: (context) => const LoginScreen()),
+                (route) => false,
+              );
+            },
+          ),
+        ],
       ),
       body: Column(
         children: [
@@ -48,7 +68,7 @@ class HomeScreen extends StatelessWidget {
             ),
           ),
 
-          // Lista de pacientes desde Firestore
+          // Lista de pacientes Firestore 
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
               stream: _dbService.getPacientesStream(),
@@ -60,6 +80,7 @@ class HomeScreen extends StatelessWidget {
                   );
                 }
 
+              
                 if (snapshot.hasError) {
                   return const Center(
                     child: Text(
@@ -78,6 +99,7 @@ class HomeScreen extends StatelessWidget {
                   );
                 }
 
+               
                 return ListView.separated(
                   padding: const EdgeInsets.symmetric(horizontal: 20.0),
                   itemCount: snapshot.data!.docs.length,
@@ -89,7 +111,7 @@ class HomeScreen extends StatelessWidget {
                     
                     String patientId = doc.id; 
 
-                    // Evita nulos si un campo falta en Firebase
+                   
                     String initials = data['initials'] ?? '';
                     String name = data['name'] ?? 'Sin nombre';
                     String details = data['details'] ?? '';
@@ -98,7 +120,7 @@ class HomeScreen extends StatelessWidget {
 
                     return _buildPatientCard(
                       context,
-                      patientId: patientId, 
+                      patientId: patientId,
                       initials: initials,
                       name: name,
                       details: details,
@@ -115,7 +137,7 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
- 
+
   Widget _buildPatientCard(
     BuildContext context, {
     required String patientId,
@@ -131,7 +153,7 @@ class HomeScreen extends StatelessWidget {
           context,
           MaterialPageRoute(
             builder: (context) => PatientDetailScreen(
-              patientId: patientId,
+              patientId: patientId, 
               initials: initials,
               name: name,
               details: details,
@@ -156,6 +178,7 @@ class HomeScreen extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // iniciales
             CircleAvatar(
               radius: 25,
               backgroundColor: AppTheme.blue.withOpacity(0.1),
@@ -169,6 +192,8 @@ class HomeScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 15),
+            
+            // Información de progreso y general
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
