@@ -1,27 +1,23 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/theme.dart';
+import '../../services/database_service.dart';
 
-class PatientDetailScreen extends StatefulWidget {
+class PatientDetailScreen extends StatelessWidget {
+  final String patientId; // <-- Recibimos el ID
   final String initials;
   final String name;
   final String details;
 
-  const PatientDetailScreen({
+  PatientDetailScreen({
     Key? key,
+    required this.patientId,
     required this.initials,
     required this.name,
     required this.details,
   }) : super(key: key);
 
-  @override
-  State<PatientDetailScreen> createState() => _PatientDetailScreenState();
-}
-
-class _PatientDetailScreenState extends State<PatientDetailScreen> {
-  // Estado simulado para las tareas de la maqueta
-  bool _aseoMatinal = true; // Simula una tarea ya completada
-  bool _medicamentos = false;
-  bool _bano = false;
+  final DatabaseService _dbService = DatabaseService();
 
   @override
   Widget build(BuildContext context) {
@@ -35,14 +31,8 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              widget.name,
-              style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.white, fontSize: 18),
-            ),
-            Text(
-              widget.details,
-              style: const TextStyle(color: AppTheme.white, fontSize: 13, fontWeight: FontWeight.w400),
-            ),
+            Text(name, style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.white, fontSize: 18)),
+            Text(details, style: const TextStyle(color: AppTheme.white, fontSize: 13, fontWeight: FontWeight.w400)),
           ],
         ),
         backgroundColor: AppTheme.blue,
@@ -59,36 +49,49 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
             ),
             const SizedBox(height: 15),
             
-            // Lista de Tareas
+            // Lista de Tareas Reactiva
             Expanded(
-              child: ListView(
-                children: [
-                  _buildTaskTile('Aseo matinal', '07:00', _aseoMatinal, (val) {
-                    setState(() => _aseoMatinal = val ?? false);
-                  }),
-                  const SizedBox(height: 12),
-                  _buildTaskTile('Medicamentos (Metformina 500mg)', '08:00', _medicamentos, (val) {
-                    setState(() => _medicamentos = val ?? false);
-                  }),
-                  const SizedBox(height: 12),
-                  _buildTaskTile('Baño', '14:00', _bano, (val) {
-                    setState(() => _bano = val ?? false);
-                  }),
-                ],
+              child: StreamBuilder<QuerySnapshot>(
+                stream: _dbService.getPatientTasksStream(patientId),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator(color: AppTheme.blue));
+                  }
+                  if (snapshot.hasError) {
+                    return const Center(child: Text('Error al cargar las tareas', style: TextStyle(color: Colors.red)));
+                  }
+                  if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                    return const Center(child: Text('No hay tareas programadas.', style: TextStyle(color: Colors.black54)));
+                  }
+
+                  return ListView.separated(
+                    itemCount: snapshot.data!.docs.length,
+                    separatorBuilder: (context, index) => const SizedBox(height: 12),
+                    itemBuilder: (context, index) {
+                      var taskDoc = snapshot.data!.docs[index];
+                      var taskData = taskDoc.data() as Map<String, dynamic>;
+                      
+                      String taskId = taskDoc.id;
+                      String title = taskData['title'] ?? 'Tarea sin título';
+                      String time = taskData['time'] ?? '--:--';
+                      bool isCompleted = taskData['isCompleted'] ?? false;
+
+                      return _buildTaskTile(taskId, title, time, isCompleted);
+                    },
+                  );
+                },
               ),
             ),
             
-            // Botón Añadir Tarea
+            const SizedBox(height: 15),
             SizedBox(
               width: double.infinity,
+              height: 55,
               child: ElevatedButton(
                 onPressed: () {
-                  // TODO: Lógica para agregar tarea
+                  // TODO: Lógica para agregar tarea (Próximo hito)
                 },
-                child: const Text(
-                  '+ Añadir tarea',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
+                child: const Text('+ Añadir tarea', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               ),
             ),
           ],
@@ -97,23 +100,24 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
     );
   }
 
-  // Componente reutilizable para cada tarea de la lista
-  Widget _buildTaskTile(String title, String time, bool isChecked, ValueChanged<bool?> onChanged) {
+  // Componente de tarea actualizado para interactuar directamente con Firestore
+  Widget _buildTaskTile(String taskId, String title, String time, bool isChecked) {
     return Container(
       decoration: BoxDecoration(
         color: AppTheme.white,
         borderRadius: BorderRadius.circular(15),
         boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 8,
-            offset: const Offset(0, 3),
-          ),
+          BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 8, offset: const Offset(0, 3)),
         ],
       ),
       child: CheckboxListTile(
         value: isChecked,
-        onChanged: onChanged,
+        onChanged: (bool? newValue) {
+          if (newValue != null) {
+            // Actualización directa a la base de datos
+            _dbService.updateTaskStatus(patientId, taskId, newValue);
+          }
+        },
         activeColor: AppTheme.green,
         checkColor: AppTheme.white,
         title: Text(

@@ -3,8 +3,17 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 class DatabaseService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
-  // Obtenemos un flujo constante (Stream) de la colección de pacientes
   Stream<QuerySnapshot> getPacientesStream() {
     return _db.collection('pacientes').snapshots();
+  }
+ 
+  Stream<QuerySnapshot> getPatientTasksStream(String patientId) {
+    return _db.collection('pacientes').doc(patientId).collection('tareas').snapshots();
+  }
+
+  Future<void> updateTaskStatus(String patientId, String taskId, bool isCompleted) async {
+    await _db.collection('pacientes').doc(patientId).collection('tareas').doc(taskId).update({
+      'isCompleted': isCompleted,
+    });
   }
 }

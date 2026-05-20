@@ -60,7 +60,6 @@ class HomeScreen extends StatelessWidget {
                   );
                 }
 
-                
                 if (snapshot.hasError) {
                   return const Center(
                     child: Text(
@@ -70,7 +69,6 @@ class HomeScreen extends StatelessWidget {
                   );
                 }
 
-                
                 if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
                   return const Center(
                     child: Text(
@@ -80,7 +78,6 @@ class HomeScreen extends StatelessWidget {
                   );
                 }
 
-                
                 return ListView.separated(
                   padding: const EdgeInsets.symmetric(horizontal: 20.0),
                   itemCount: snapshot.data!.docs.length,
@@ -88,6 +85,9 @@ class HomeScreen extends StatelessWidget {
                   itemBuilder: (context, index) {
                     var doc = snapshot.data!.docs[index];
                     var data = doc.data() as Map<String, dynamic>;
+
+                    
+                    String patientId = doc.id; 
 
                     // Evita nulos si un campo falta en Firebase
                     String initials = data['initials'] ?? '';
@@ -98,6 +98,7 @@ class HomeScreen extends StatelessWidget {
 
                     return _buildPatientCard(
                       context,
+                      patientId: patientId, 
                       initials: initials,
                       name: name,
                       details: details,
@@ -114,9 +115,10 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  
+ 
   Widget _buildPatientCard(
     BuildContext context, {
+    required String patientId,
     required String initials,
     required String name,
     required String details,
@@ -129,6 +131,7 @@ class HomeScreen extends StatelessWidget {
           context,
           MaterialPageRoute(
             builder: (context) => PatientDetailScreen(
+              patientId: patientId,
               initials: initials,
               name: name,
               details: details,
