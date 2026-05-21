@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'home_screen.dart';
 import '../../core/theme.dart';
 import '../../core/rut_formatter.dart';
 import '../../services/auth_service.dart';
+import '../../services/session_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({Key? key}) : super(key: key);
@@ -17,6 +20,45 @@ class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _centroController = TextEditingController(); 
   final AuthService _authService = AuthService();
   bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkAutoLogin();
+    });
+  }
+
+  Future<void> _checkAutoLogin() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      setState(() => _isLoading = true);
+      try {
+        final doc = await FirebaseFirestore.instance.collection('usuarios').doc(user.uid).get();
+        if (doc.exists) {
+          final data = doc.data() as Map<String, dynamic>;
+          SessionService().initialize(
+            uid: user.uid,
+            nombre: data['nombre'] ?? '',
+            rut: data['rut'] ?? '',
+            rol: data['rol'] ?? '',
+            centroId: data['centroId'] ?? '',
+          );
+          if (!mounted) return;
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => HomeScreen()),
+          );
+        } else {
+          await FirebaseAuth.instance.signOut();
+        }
+      } catch (e) {
+        await FirebaseAuth.instance.signOut();
+      } finally {
+        if (mounted) setState(() => _isLoading = false);
+      }
+    }
+  }
 
   Future<void> _handleLogin() async {
     // Evitar campos vacíos
