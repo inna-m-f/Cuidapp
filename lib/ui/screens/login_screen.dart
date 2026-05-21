@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'home_screen.dart';
 import '../../core/theme.dart';
-import '../../services/auth_service.dart'; 
+import '../../core/rut_formatter.dart';
+import '../../services/auth_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({Key? key}) : super(key: key);
@@ -95,6 +96,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       TextField(
                         controller: _rutController, // <-- Asignamos controlador
                         keyboardType: TextInputType.text,
+                        inputFormatters: [RutFormatter()],
                         decoration: const InputDecoration(hintText: '12.345.678-9', hintStyle: TextStyle(color: Colors.black38)),
                       ),
                       const SizedBox(height: 25),
@@ -118,13 +120,6 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
                       const SizedBox(height: 25),
-                      
-                      Center(
-                        child: TextButton(
-                          onPressed: () {},
-                          child: const Text('¿Olvidaste tu contraseña?', style: TextStyle(color: Colors.black45, fontSize: 15)),
-                        ),
-                      ),
                     ],
                   ),
                 ),
