@@ -39,10 +39,10 @@ class _LoginScreenState extends State<LoginScreen> {
           final data = doc.data() as Map<String, dynamic>;
           SessionService().initialize(
             uid: user.uid,
-            nombre: data['nombre'] ?? '',
+            nombre: data['nombre'] ?? data['name'] ?? '',
             rut: data['rut'] ?? '',
             rol: data['rol'] ?? '',
-            centroId: data['centroId'] ?? '',
+            centroId: data['centroId'] ?? data['centroID'] ?? '',
           );
           if (!mounted) return;
           Navigator.pushReplacement(

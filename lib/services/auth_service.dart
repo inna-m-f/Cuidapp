@@ -32,10 +32,10 @@ class AuthService {
       // 3. Inicializar el SessionService con la información obtenida
       SessionService().initialize(
         uid: uid,
-        nombre: data['nombre'] ?? '',
+        nombre: data['nombre'] ?? data['name'] ?? '',
         rut: data['rut'] ?? '',
         rol: data['rol'] ?? '',
-        centroId: data['centroId'] ?? '',
+        centroId: data['centroId'] ?? data['centroID'] ?? '',
       );
 
       return userCredential;
