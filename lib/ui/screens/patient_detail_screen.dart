@@ -447,9 +447,11 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
       ),
       child: CheckboxListTile(
         value: isChecked,
-        onChanged: (bool? newValue) {
+        // LÓGICA DE BLOQUEO Y TRAZABILIDAD
+        onChanged: isAdmin ? null : (bool? newValue) {
           if (newValue != null) {
-            _dbService.updateTaskStatus(widget.patientId, taskId, newValue);
+            String currentUid = SessionService().uid ?? 'UID_NO_ENCONTRADO';
+            _dbService.updateTaskStatus(widget.patientId, taskId, newValue, currentUid);
           }
         },
         activeColor: AppTheme.green,

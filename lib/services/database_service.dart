@@ -172,9 +172,12 @@ class DatabaseService {
     return _db.collection('pacientes').doc(patientId).collection('tareas').snapshots();
   }
 
-  Future<void> updateTaskStatus(String patientId, String taskId, bool isCompleted) async {
+  // RF-09: Actualización de tarea con trazabilidad (Agregado parámetro 'uid')
+  Future<void> updateTaskStatus(String patientId, String taskId, bool isCompleted, String uid) async {
     await _db.collection('pacientes').doc(patientId).collection('tareas').doc(taskId).update({
       'isCompleted': isCompleted,
+      'completedBy': isCompleted ? uid : null,
+      'completedAt': isCompleted ? FieldValue.serverTimestamp() : null,
     });
   }
 
