@@ -181,14 +181,22 @@ class DatabaseService {
     });
   }
 
-  Future<void> addTask(String patientId, String title, String time) async {
-    await _db.collection('pacientes').doc(patientId).collection('tareas').add({
-      'title': title,
-      'time': time,
-      'isCompleted': false,
-      'fechaCreacion': FieldValue.serverTimestamp(),
-    });
-  }
+Future<void> addTask({
+  required String patientId,
+  required String title,
+  required String time,
+  required String category,
+}) async {
+  await _db.collection('pacientes').doc(patientId).collection('tareas').add({
+    'title': title.trim(),
+    'time': time.trim(),
+    'category': category.trim(),
+    'isCompleted': false,
+    'completedBy': null,
+    'completedAt': null,
+    'fechaCreacion': FieldValue.serverTimestamp(),
+  });
+}
 
   Future<void> deleteTask(String patientId, String taskId) async {
     await _db.collection('pacientes').doc(patientId).collection('tareas').doc(taskId).delete();
