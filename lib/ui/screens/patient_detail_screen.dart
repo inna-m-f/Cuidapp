@@ -25,6 +25,99 @@ class PatientDetailScreen extends StatefulWidget {
 class _PatientDetailScreenState extends State<PatientDetailScreen> {
   final DatabaseService _dbService = DatabaseService();
 
+  String _normalizeDia(String dia) {
+    switch (dia.toLowerCase()) {
+      case 'miércoles':
+        return 'miercoles';
+      case 'sábado':
+        return 'sabado';
+      default:
+        return dia.toLowerCase();
+    }
+  }
+
+  void _showAssignCaregiverDialog({
+    required BuildContext context,
+    required String dia,
+    required List<String> alreadyAssignedUids,
+    required List<QueryDocumentSnapshot> allCaregivers,
+  }) {
+    final unassigned = allCaregivers.where((doc) => !alreadyAssignedUids.contains(doc.id)).toList();
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Text(
+            'Asignar Cuidador - $dia',
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+          content: unassigned.isEmpty
+              ? const Text(
+                  'Todos los cuidadores disponibles ya están asignados a este día.',
+                  style: TextStyle(color: Colors.black54),
+                )
+              : SizedBox(
+                  width: double.maxFinite,
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: unassigned.length,
+                    separatorBuilder: (context, index) => const Divider(),
+                    itemBuilder: (context, index) {
+                      var doc = unassigned[index];
+                      var data = doc.data() as Map<String, dynamic>;
+                      String uid = doc.id;
+                      String nombre = data['nombre'] ?? 'Sin nombre';
+                      String rut = data['rut'] ?? '';
+
+                      return ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor: AppTheme.blue.withOpacity(0.1),
+                          child: Text(
+                            nombre.isNotEmpty ? nombre[0].toUpperCase() : 'C',
+                            style: const TextStyle(color: AppTheme.blue, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        title: Text(nombre, style: const TextStyle(fontWeight: FontWeight.bold)),
+                        subtitle: Text('RUT: $rut'),
+                        trailing: const Icon(Icons.add_circle_outline, color: AppTheme.blue),
+                        onTap: () async {
+                          try {
+                            await _dbService.asignarCuidadorAPaciente(
+                              pacienteId: widget.patientId,
+                              cuidadorId: uid,
+                              diaSemana: _normalizeDia(dia),
+                            );
+                            if (!context.mounted) return;
+                            Navigator.pop(context);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('$nombre asignado correctamente para el día $dia'),
+                                backgroundColor: Colors.green,
+                              ),
+                            );
+                          } catch (e) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+                            );
+                          }
+                        },
+                      );
+                    },
+                  ),
+                ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cerrar', style: TextStyle(color: Colors.grey)),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   String _formatTime(dynamic value) {
     final raw = value?.toString().trim() ?? '';
 
@@ -1005,14 +1098,155 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
   }
 
   Widget _buildAssignmentsTab(BuildContext context) {
-    return const Center(
-      child: Text(
-        'Sección de Asignaciones',
-        style: TextStyle(
-          fontSize: 16,
-          color: Colors.black54,
-        ),
-      ),
+    final String adminCentroId = SessionService().centroId;
+    final List<String> dias = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+
+    return StreamBuilder<QuerySnapshot>(
+      stream: _dbService.getCuidadoresStream(),
+      builder: (context, caregiversSnapshot) {
+        if (caregiversSnapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator(color: AppTheme.blue));
+        }
+
+        if (caregiversSnapshot.hasError) {
+          return const Center(child: Text('Error al obtener la lista de cuidadores.'));
+        }
+
+        // Crear mapa uid -> nombre para buscar rápido
+        Map<String, String> caregiverNames = {};
+        List<QueryDocumentSnapshot> caregiversDocs = [];
+        if (caregiversSnapshot.hasData) {
+          caregiversDocs = caregiversSnapshot.data!.docs.where((doc) {
+            var data = doc.data() as Map<String, dynamic>;
+            String cId = data['centroId'] ?? data['centroID'] ?? '';
+            return cId == adminCentroId;
+          }).toList();
+
+          for (var doc in caregiversDocs) {
+            caregiverNames[doc.id] = (doc.data() as Map<String, dynamic>)['nombre'] ?? 'Sin nombre';
+          }
+        }
+
+        return StreamBuilder<DocumentSnapshot>(
+          stream: FirebaseFirestore.instance.collection('pacientes').doc(widget.patientId).snapshots(),
+          builder: (context, patientSnapshot) {
+            if (patientSnapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator(color: AppTheme.blue));
+            }
+
+            if (!patientSnapshot.hasData || !patientSnapshot.data!.exists) {
+              return const Center(child: Text('No se pudo cargar la información del paciente.'));
+            }
+
+            var patientData = patientSnapshot.data!.data() as Map<String, dynamic>? ?? {};
+            List<String> asignaciones = List<String>.from(patientData['asignaciones'] ?? []);
+
+            return ListView.separated(
+              padding: const EdgeInsets.all(20.0),
+              itemCount: dias.length,
+              separatorBuilder: (context, index) => const SizedBox(height: 15),
+              itemBuilder: (context, index) {
+                String dia = dias[index];
+                String normalizedDia = _normalizeDia(dia);
+                String prefix = '${normalizedDia}_';
+
+                // Filtrar uids asignados a este día específico
+                List<String> assignedUids = asignaciones
+                    .where((asig) => asig.startsWith(prefix))
+                    .map((asig) => asig.substring(prefix.length))
+                    .toList();
+
+                return Container(
+                  decoration: BoxDecoration(
+                    color: AppTheme.white,
+                    borderRadius: BorderRadius.circular(15),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.03),
+                        blurRadius: 8,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            dia,
+                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.add_circle_outline, color: AppTheme.blue, size: 24),
+                            onPressed: () {
+                              _showAssignCaregiverDialog(
+                                context: context,
+                                dia: dia,
+                                alreadyAssignedUids: assignedUids,
+                                allCaregivers: caregiversDocs,
+                              );
+                            },
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      assignedUids.isEmpty
+                          ? const Text(
+                              'Sin cuidadores asignados',
+                              style: TextStyle(color: Colors.grey, fontSize: 13, fontStyle: FontStyle.italic),
+                            )
+                          : Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: assignedUids.map((uid) {
+                                String nombreCuidador = caregiverNames[uid] ?? 'Cargando...';
+                                return Chip(
+                                  backgroundColor: AppTheme.blue.withOpacity(0.08),
+                                  side: BorderSide.none,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  label: Text(
+                                    nombreCuidador,
+                                    style: const TextStyle(
+                                      color: AppTheme.blue,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                  deleteIcon: const Icon(Icons.cancel, size: 18, color: Colors.redAccent),
+                                  onDeleted: () async {
+                                    try {
+                                      await _dbService.desasignarCuidadorDePaciente(
+                                        pacienteId: widget.patientId,
+                                        cuidadorId: uid,
+                                        diaSemana: normalizedDia,
+                                      );
+                                      if (!context.mounted) return;
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Text('Se quitó a $nombreCuidador de la asignación del $dia'),
+                                        ),
+                                      );
+                                    } catch (e) {
+                                      if (!context.mounted) return;
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+                                      );
+                                    }
+                                  },
+                                );
+                              }).toList(),
+                            ),
+                    ],
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
     );
   }
 }
