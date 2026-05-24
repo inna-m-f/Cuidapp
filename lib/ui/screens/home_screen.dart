@@ -37,15 +37,174 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   String _removeDiacritics(String str) {
-    var withDia = 'ÀÁÂÃÄÅàáâãäåÒÓÔÕÕÖØòóôõöøÈÉÊËèéêëðÇçÐdÌÍÎÏìíîïÙÚÛÜùúûüÑñÝýÿ';
-    var withoutDia = 'AAAAAAaaaaaaOOOOOOOooooooEEEEeeeeoCcDdIIIIiiiiUUUUuuuuNnYyy';
+    var withDia =
+        'ÀÁÂÃÄÅàáâãäåÒÓÔÕÕÖØòóôõöøÈÉÊËèéêëðÇçÐdÌÍÎÏìíîïÙÚÛÜùúûüÑñÝýÿ';
+    var withoutDia =
+        'AAAAAAaaaaaaOOOOOOOooooooEEEEeeeeoCcDdIIIIiiiiUUUUuuuuNnYyy';
+
     for (int i = 0; i < withDia.length; i++) {
       str = str.replaceAll(withDia[i], withoutDia[i]);
     }
+
     return str;
   }
 
-  // Desplegar modal para registrar pacientes (Exclusivo Admin)
+  IconData _getCategoryIcon(String category) {
+    final lower = category.toLowerCase();
+
+    if (lower.contains('medic')) return Icons.medication_rounded;
+
+    if (lower.contains('alimen') ||
+        lower.contains('comida') ||
+        lower.contains('desayuno') ||
+        lower.contains('almuerzo') ||
+        lower.contains('colación') ||
+        lower.contains('colacion') ||
+        lower.contains('once') ||
+        lower.contains('cena')) {
+      return Icons.restaurant_rounded;
+    }
+
+    if (lower.contains('higiene') ||
+        lower.contains('aseo') ||
+        lower.contains('baño') ||
+        lower.contains('bano')) {
+      return Icons.bolt_rounded;
+    }
+
+    if (lower.contains('salida') || lower.contains('visita')) {
+      return Icons.groups_rounded;
+    }
+
+    return Icons.checklist_rounded;
+  }
+
+  Color _getCategoryColor(String category) {
+    final lower = category.toLowerCase();
+
+    if (lower.contains('medic')) return const Color(0xFF7B1FA2);
+
+    if (lower.contains('alimen') ||
+        lower.contains('comida') ||
+        lower.contains('desayuno') ||
+        lower.contains('almuerzo') ||
+        lower.contains('colación') ||
+        lower.contains('colacion') ||
+        lower.contains('once') ||
+        lower.contains('cena')) {
+      return const Color(0xFF00C853);
+    }
+
+    if (lower.contains('higiene') ||
+        lower.contains('aseo') ||
+        lower.contains('baño') ||
+        lower.contains('bano')) {
+      return const Color(0xFF2979FF);
+    }
+
+    if (lower.contains('salida') || lower.contains('visita')) {
+      return const Color(0xFF00A86B);
+    }
+
+    return AppTheme.blue;
+  }
+
+  Widget _buildPatientTaskProgress(String patientId) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('pacientes')
+          .doc(patientId)
+          .collection('tareas')
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          return const SizedBox.shrink();
+        }
+
+        final Map<String, Map<String, int>> grouped = {};
+
+        for (final doc in snapshot.data!.docs) {
+          final data = doc.data() as Map<String, dynamic>;
+
+          final category = (data['category'] ??
+                  data['categoria'] ??
+                  data['tipo'] ??
+                  data['type'] ??
+                  'Medicamentos')
+              .toString();
+
+          grouped.putIfAbsent(category, () {
+            return {
+              'completed': 0,
+              'total': 0,
+            };
+          });
+
+          grouped[category]!['total'] = grouped[category]!['total']! + 1;
+
+          if (data['isCompleted'] == true) {
+            grouped[category]!['completed'] =
+                grouped[category]!['completed']! + 1;
+          }
+        }
+
+        return Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: grouped.entries.map((entry) {
+            final category = entry.key;
+            final completed = entry.value['completed']!;
+            final total = entry.value['total']!;
+            final color = _getCategoryColor(category);
+            final isComplete = total > 0 && completed == total;
+
+            return Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 10,
+                vertical: 5,
+              ),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color:
+                      isComplete ? color.withOpacity(0.35) : Colors.transparent,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    _getCategoryIcon(category),
+                    size: 15,
+                    color: color,
+                  ),
+                  const SizedBox(width: 5),
+                  Text(
+                    '$completed/$total',
+                    style: TextStyle(
+                      color: color,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 12,
+                    ),
+                  ),
+                  if (isComplete) ...[
+                    const SizedBox(width: 4),
+                    Icon(
+                      Icons.check_circle_rounded,
+                      size: 13,
+                      color: color,
+                    ),
+                  ],
+                ],
+              ),
+            );
+          }).toList(),
+        );
+      },
+    );
+  }
+
   void _showAddPatientDialog(BuildContext context) {
     final TextEditingController nameCtrl = TextEditingController();
     final TextEditingController ageCtrl = TextEditingController();
@@ -55,7 +214,9 @@ class _HomeScreenState extends State<HomeScreen> {
       context: context,
       builder: (context) {
         return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
           title: const Text(
             'Agregar Nuevo Paciente',
             style: TextStyle(fontWeight: FontWeight.bold),
@@ -96,7 +257,10 @@ class _HomeScreenState extends State<HomeScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
+              child: const Text(
+                'Cancelar',
+                style: TextStyle(color: Colors.grey),
+              ),
             ),
             ElevatedButton(
               onPressed: () async {
@@ -106,20 +270,24 @@ class _HomeScreenState extends State<HomeScreen> {
 
                 if (name.isEmpty || age.isEmpty || room.isEmpty) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Por favor completa todos los campos')),
+                    const SnackBar(
+                      content: Text('Por favor completa todos los campos'),
+                    ),
                   );
                   return;
                 }
 
-                // Obtener iniciales automáticamente
                 List<String> parts = name.split(' ');
                 String initials = '';
+
                 if (parts.isNotEmpty && parts[0].isNotEmpty) {
                   initials += parts[0][0];
                 }
+
                 if (parts.length > 1 && parts[1].isNotEmpty) {
                   initials += parts[1][0];
                 }
+
                 if (initials.isEmpty) initials = 'P';
 
                 String details = '$age años • $room';
@@ -131,23 +299,41 @@ class _HomeScreenState extends State<HomeScreen> {
                     details: details,
                     initials: initials,
                   );
+
                   if (!context.mounted) return;
+
                   Navigator.pop(context);
+
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Paciente agregado correctamente'), backgroundColor: Colors.green),
+                    const SnackBar(
+                      content: Text('Paciente agregado correctamente'),
+                      backgroundColor: Colors.green,
+                    ),
                   );
                 } catch (e) {
                   if (!context.mounted) return;
+
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+                    SnackBar(
+                      content: Text('Error: $e'),
+                      backgroundColor: Colors.red,
+                    ),
                   );
                 }
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF00C853),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
-              child: const Text('Guardar', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              child: const Text(
+                'Guardar',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ),
           ],
         );
@@ -164,31 +350,44 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         title: const Text(
           'Pacientes del Centro',
-          style: TextStyle(fontWeight: FontWeight.bold, color: AppTheme.white),
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: AppTheme.white,
+          ),
         ),
         automaticallyImplyLeading: false,
         actions: [
-          // Botón exclusivo de administración para gestionar cuidadores
           if (session.isAdmin)
             IconButton(
-              icon: const Icon(Icons.people_alt_outlined, color: AppTheme.white),
+              icon: const Icon(
+                Icons.people_alt_outlined,
+                color: AppTheme.white,
+              ),
               tooltip: 'Gestionar Cuidadores',
               onPressed: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (context) => const AdminCuidadoresScreen()),
+                  MaterialPageRoute(
+                    builder: (context) => const AdminCuidadoresScreen(),
+                  ),
                 );
               },
             ),
-          // Botón de Cierre de Sesión Seguro
           IconButton(
-            icon: const Icon(Icons.logout, color: AppTheme.white),
+            icon: const Icon(
+              Icons.logout,
+              color: AppTheme.white,
+            ),
             onPressed: () async {
               await AuthService().signOut();
+
               if (!context.mounted) return;
+
               Navigator.pushAndRemoveUntil(
                 context,
-                MaterialPageRoute(builder: (context) => const LoginScreen()),
+                MaterialPageRoute(
+                  builder: (context) => const LoginScreen(),
+                ),
                 (route) => false,
               );
             },
@@ -199,10 +398,16 @@ class _HomeScreenState extends State<HomeScreen> {
           ? FloatingActionButton.extended(
               onPressed: () => _showAddPatientDialog(context),
               backgroundColor: const Color(0xFF00C853),
-              icon: const Icon(Icons.add, color: Colors.white),
+              icon: const Icon(
+                Icons.add,
+                color: Colors.white,
+              ),
               label: const Text(
                 'Nuevo Paciente',
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             )
           : null,
@@ -214,13 +419,19 @@ class _HomeScreenState extends State<HomeScreen> {
               controller: _searchController,
               decoration: InputDecoration(
                 hintText: 'Buscar paciente...',
-                prefixIcon: const Icon(Icons.search, color: AppTheme.blue),
+                prefixIcon: const Icon(
+                  Icons.search,
+                  color: AppTheme.blue,
+                ),
                 filled: true,
                 fillColor: AppTheme.white,
                 contentPadding: const EdgeInsets.symmetric(vertical: 0),
                 suffixIcon: _searchQuery.isNotEmpty
                     ? IconButton(
-                        icon: const Icon(Icons.clear, color: Colors.grey),
+                        icon: const Icon(
+                          Icons.clear,
+                          color: Colors.grey,
+                        ),
                         onPressed: () => _searchController.clear(),
                       )
                     : null,
@@ -234,13 +445,14 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(25),
-                  borderSide: const BorderSide(color: AppTheme.blue, width: 2),
+                  borderSide: const BorderSide(
+                    color: AppTheme.blue,
+                    width: 2,
+                  ),
                 ),
               ),
             ),
           ),
-
-          // Lista de pacientes Firestore
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
               stream: _dbService.getPacientesStream(
@@ -268,19 +480,26 @@ class _HomeScreenState extends State<HomeScreen> {
                   return const Center(
                     child: Text(
                       'No hay pacientes registrados.',
-                      style: TextStyle(color: Colors.black54, fontSize: 16),
+                      style: TextStyle(
+                        color: Colors.black54,
+                        fontSize: 16,
+                      ),
                     ),
                   );
                 }
 
-                // Filtrado local por la barra de búsqueda
                 var docs = snapshot.data!.docs;
+
                 if (_searchQuery.isNotEmpty) {
-                  String queryNormalized = _removeDiacritics(_searchQuery.toLowerCase());
+                  String queryNormalized =
+                      _removeDiacritics(_searchQuery.toLowerCase());
+
                   docs = docs.where((doc) {
                     var data = doc.data() as Map<String, dynamic>;
                     String name = data['name'] ?? '';
-                    String nameNormalized = _removeDiacritics(name.toLowerCase());
+                    String nameNormalized =
+                        _removeDiacritics(name.toLowerCase());
+
                     return nameNormalized.contains(queryNormalized);
                   }).toList();
                 }
@@ -289,15 +508,23 @@ class _HomeScreenState extends State<HomeScreen> {
                   return const Center(
                     child: Text(
                       'No se encontraron coincidencias.',
-                      style: TextStyle(color: Colors.black54, fontSize: 16),
+                      style: TextStyle(
+                        color: Colors.black54,
+                        fontSize: 16,
+                      ),
                     ),
                   );
                 }
 
                 return ListView.separated(
-                  padding: const EdgeInsets.only(left: 20.0, right: 20.0, bottom: 80.0), // Margen para el FAB
+                  padding: const EdgeInsets.only(
+                    left: 20.0,
+                    right: 20.0,
+                    bottom: 80.0,
+                  ),
                   itemCount: docs.length,
-                  separatorBuilder: (context, index) => const SizedBox(height: 15),
+                  separatorBuilder: (context, index) =>
+                      const SizedBox(height: 15),
                   itemBuilder: (context, index) {
                     var doc = docs[index];
                     var data = doc.data() as Map<String, dynamic>;
@@ -307,7 +534,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     String name = data['name'] ?? 'Sin nombre';
                     String details = data['details'] ?? '';
                     String status = data['status'] ?? 'Estable';
-                    List<String> progressChips = List<String>.from(data['progressChips'] ?? []);
 
                     return _buildPatientCard(
                       context,
@@ -316,7 +542,6 @@ class _HomeScreenState extends State<HomeScreen> {
                       name: name,
                       details: details,
                       status: status,
-                      progressChips: progressChips,
                     );
                   },
                 );
@@ -335,7 +560,6 @@ class _HomeScreenState extends State<HomeScreen> {
     required String name,
     required String details,
     required String status,
-    required List<String> progressChips,
   }) {
     final session = SessionService();
 
@@ -370,7 +594,6 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Iniciales
             CircleAvatar(
               radius: 25,
               backgroundColor: AppTheme.blue.withOpacity(0.1),
@@ -384,8 +607,6 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             const SizedBox(width: 15),
-
-            // Información y progreso
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -417,30 +638,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       color: Colors.black54,
                     ),
                   ),
-                  if (progressChips.isNotEmpty) ...[
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: progressChips.map((chipText) {
-                        return Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: AppTheme.green.withOpacity(0.15),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Text(
-                            chipText,
-                            style: const TextStyle(
-                              color: AppTheme.green,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 12,
-                            ),
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                  ],
+                  const SizedBox(height: 12),
+                  _buildPatientTaskProgress(patientId),
                 ],
               ),
             ),
@@ -449,7 +648,6 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
 
-    // Si es administrador, permitimos eliminar al paciente con gesto de deslizamiento
     if (!session.isAdmin) {
       return card;
     }
@@ -464,27 +662,49 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.only(right: 25.0),
-        child: const Icon(Icons.delete, color: Colors.white, size: 28),
+        child: const Icon(
+          Icons.delete,
+          color: Colors.white,
+          size: 28,
+        ),
       ),
       confirmDismiss: (direction) async {
         return await showDialog<bool>(
           context: context,
           builder: (context) => AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-            title: const Text('Eliminar Paciente', style: TextStyle(fontWeight: FontWeight.bold)),
-            content: Text('¿Estás seguro de que deseas eliminar a $name? Se borrarán de forma permanente todos sus registros y tareas.'),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(15),
+            ),
+            title: const Text(
+              'Eliminar Paciente',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            content: Text(
+              '¿Estás seguro de que deseas eliminar a $name? Se borrarán de forma permanente todos sus registros y tareas.',
+            ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context, false),
-                child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
+                child: const Text(
+                  'Cancelar',
+                  style: TextStyle(color: Colors.grey),
+                ),
               ),
               ElevatedButton(
                 onPressed: () => Navigator.pop(context, true),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.redAccent,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
                 ),
-                child: const Text('Eliminar', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                child: const Text(
+                  'Eliminar',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ),
             ],
           ),
@@ -493,14 +713,22 @@ class _HomeScreenState extends State<HomeScreen> {
       onDismissed: (direction) async {
         try {
           await _dbService.deletePaciente(patientId);
+
           if (!context.mounted) return;
+
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Paciente $name eliminado con éxito')),
+            SnackBar(
+              content: Text('Paciente $name eliminado con éxito'),
+            ),
           );
         } catch (e) {
           if (!context.mounted) return;
+
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error al eliminar paciente: $e'), backgroundColor: Colors.red),
+            SnackBar(
+              content: Text('Error al eliminar paciente: $e'),
+              backgroundColor: Colors.red,
+            ),
           );
         }
       },
@@ -513,19 +741,23 @@ class _HomeScreenState extends State<HomeScreen> {
     Color textColor;
 
     String lowerStatus = status.toLowerCase();
+
     if (lowerStatus == 'estable') {
-      bgColor = const Color(0xFFE8F5E9); // Verde muy claro
-      textColor = const Color(0xFF2E7D32); // Verde oscuro
+      bgColor = const Color(0xFFE8F5E9);
+      textColor = const Color(0xFF2E7D32);
     } else if (lowerStatus == 'atención' || lowerStatus == 'atencion') {
-      bgColor = const Color(0xFFFFF3E0); // Naranja muy claro
-      textColor = const Color(0xFFEF6C00); // Naranja oscuro
+      bgColor = const Color(0xFFFFF3E0);
+      textColor = const Color(0xFFEF6C00);
     } else {
       bgColor = Colors.grey.shade200;
       textColor = Colors.grey.shade700;
     }
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      padding: const EdgeInsets.symmetric(
+        horizontal: 10,
+        vertical: 4,
+      ),
       decoration: BoxDecoration(
         color: bgColor,
         borderRadius: BorderRadius.circular(12),
