@@ -42,7 +42,9 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
     required List<String> alreadyAssignedUids,
     required List<QueryDocumentSnapshot> allCaregivers,
   }) {
-    final unassigned = allCaregivers.where((doc) => !alreadyAssignedUids.contains(doc.id)).toList();
+    final unassigned = allCaregivers
+        .where((doc) => !alreadyAssignedUids.contains(doc.id))
+        .toList();
 
     showDialog(
       context: context,
@@ -76,12 +78,21 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                           backgroundColor: AppTheme.blue.withOpacity(0.1),
                           child: Text(
                             nombre.isNotEmpty ? nombre[0].toUpperCase() : 'C',
-                            style: const TextStyle(color: AppTheme.blue, fontWeight: FontWeight.bold),
+                            style: const TextStyle(
+                              color: AppTheme.blue,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
-                        title: Text(nombre, style: const TextStyle(fontWeight: FontWeight.bold)),
+                        title: Text(
+                          nombre,
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
                         subtitle: Text('RUT: $rut'),
-                        trailing: const Icon(Icons.add_circle_outline, color: AppTheme.blue),
+                        trailing: const Icon(
+                          Icons.add_circle_outline,
+                          color: AppTheme.blue,
+                        ),
                         onTap: () async {
                           try {
                             await _dbService.asignarCuidadorAPaciente(
@@ -89,17 +100,25 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                               cuidadorId: uid,
                               diaSemana: _normalizeDia(dia),
                             );
+
                             if (!context.mounted) return;
+
                             Navigator.pop(context);
+
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
-                                content: Text('$nombre asignado correctamente para el día $dia'),
+                                content: Text(
+                                  '$nombre asignado correctamente para el día $dia',
+                                ),
                                 backgroundColor: Colors.green,
                               ),
                             );
                           } catch (e) {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+                              SnackBar(
+                                content: Text('Error: $e'),
+                                backgroundColor: Colors.red,
+                              ),
                             );
                           }
                         },
@@ -110,7 +129,10 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('Cerrar', style: TextStyle(color: Colors.grey)),
+              child: const Text(
+                'Cerrar',
+                style: TextStyle(color: Colors.grey),
+              ),
             ),
           ],
         );
@@ -122,6 +144,18 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
     final raw = value?.toString().trim() ?? '';
 
     if (raw.isEmpty) return '';
+
+    final upper = raw.toUpperCase();
+    final amPmRegex = RegExp(r'^(\d{1,2}):(\d{2})\s*(AM|PM)$');
+    final match = amPmRegex.firstMatch(upper);
+
+    if (match != null) {
+      final hour = int.parse(match.group(1)!);
+      final minute = match.group(2)!;
+      final period = match.group(3)!;
+
+      return '$hour:$minute $period';
+    }
 
     final clean = raw.replaceAll(':', '').replaceAll(' ', '');
 
@@ -137,43 +171,43 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
   }
 
   int _timeToMinutes(dynamic value) {
-  final raw = value?.toString().trim().toUpperCase() ?? '';
+    final raw = value?.toString().trim().toUpperCase() ?? '';
 
-  if (raw.isEmpty) return 99999;
+    if (raw.isEmpty) return 99999;
 
-  final amPmRegex = RegExp(r'^(\d{1,2}):(\d{2})\s*(AM|PM)$');
-  final match = amPmRegex.firstMatch(raw);
+    final amPmRegex = RegExp(r'^(\d{1,2}):(\d{2})\s*(AM|PM)$');
+    final match = amPmRegex.firstMatch(raw);
 
-  if (match != null) {
-    int hour = int.parse(match.group(1)!);
-    final minute = int.parse(match.group(2)!);
-    final period = match.group(3)!;
+    if (match != null) {
+      int hour = int.parse(match.group(1)!);
+      final minute = int.parse(match.group(2)!);
+      final period = match.group(3)!;
 
-    if (period == 'AM') {
-      if (hour == 12) hour = 0;
-    } else {
-      if (hour != 12) hour += 12;
+      if (period == 'AM') {
+        if (hour == 12) hour = 0;
+      } else {
+        if (hour != 12) hour += 12;
+      }
+
+      return hour * 60 + minute;
     }
 
-    return hour * 60 + minute;
+    final clean = raw.replaceAll(':', '').replaceAll(' ', '');
+
+    if (clean.length == 4 && int.tryParse(clean) != null) {
+      final hour = int.parse(clean.substring(0, 2));
+      final minute = int.parse(clean.substring(2, 4));
+      return hour * 60 + minute;
+    }
+
+    if (clean.length == 3 && int.tryParse(clean) != null) {
+      final hour = int.parse(clean.substring(0, 1));
+      final minute = int.parse(clean.substring(1, 3));
+      return hour * 60 + minute;
+    }
+
+    return 99999;
   }
-
-  final clean = raw.replaceAll(':', '').replaceAll(' ', '');
-
-  if (clean.length == 4 && int.tryParse(clean) != null) {
-    final hour = int.parse(clean.substring(0, 2));
-    final minute = int.parse(clean.substring(2, 4));
-    return hour * 60 + minute;
-  }
-
-  if (clean.length == 3 && int.tryParse(clean) != null) {
-    final hour = int.parse(clean.substring(0, 1));
-    final minute = int.parse(clean.substring(1, 3));
-    return hour * 60 + minute;
-  }
-
-  return 99999;
-}
 
   String _getCategory(Map<String, dynamic> data) {
     final rawCategory = data['category'] ??
@@ -260,366 +294,416 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
       tasks.sort((a, b) {
         final dataA = a.data() as Map<String, dynamic>;
         final dataB = b.data() as Map<String, dynamic>;
+
         final timeA = _timeToMinutes(dataA['time']);
         final timeB = _timeToMinutes(dataB['time']);
 
-      return timeA.compareTo(timeB);
+        return timeA.compareTo(timeB);
       });
     });
 
     return grouped;
   }
 
-void _showAddTaskDialog() {
-  final TextEditingController titleCtrl = TextEditingController();
+  void _showAddTaskDialog() {
+    final TextEditingController titleCtrl = TextEditingController();
 
-  String selectedCategory = 'Medicamentos';
-  String selectedHour = '12';
-  String selectedMinute = '00';
-  String selectedPeriod = 'AM';
+    String selectedCategory = 'Medicamentos';
+    String selectedHour = '12';
+    String selectedMinute = '00';
+    String selectedPeriod = 'AM';
+    String selectedMeal = 'Almuerzo';
 
-  final List<String> categories = [
-    'Medicamentos',
-    'Alimentación',
-    'Higiene',
-    'Salidas / Visitas',
-  ];
+    final List<String> categories = [
+      'Medicamentos',
+      'Alimentación',
+      'Higiene',
+      'Salidas / Visitas',
+    ];
 
-  final List<String> hours = List.generate(
-    12,
-    (index) => '${index + 1}',
-  );
+    final List<String> mealOptions = [
+      'Almuerzo',
+      'Colación',
+      'Once',
+      'Cena',
+    ];
 
-  final List<String> minutes = List.generate(
-    60,
-    (index) => index.toString().padLeft(2, '0'),
-  );
+    final List<String> hours = List.generate(
+      12,
+      (index) => '${index + 1}',
+    );
 
-  showModalBottomSheet(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: Colors.transparent,
-    builder: (context) {
-      return StatefulBuilder(
-        builder: (context, setModalState) {
-          return Padding(
-            padding: EdgeInsets.only(
-              bottom: MediaQuery.of(context).viewInsets.bottom,
-            ),
-            child: Container(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.vertical(
-                  top: Radius.circular(28),
-                ),
+    final List<String> minutes = List.generate(
+      60,
+      (index) => index.toString().padLeft(2, '0'),
+    );
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom,
               ),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Center(
-                      child: Container(
-                        width: 42,
-                        height: 5,
-                        decoration: BoxDecoration(
-                          color: Colors.grey.shade300,
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'Agregar tarea',
-                                style: TextStyle(
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.w800,
-                                  color: Colors.black87,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                widget.name,
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  color: Colors.black54,
-                                ),
-                              ),
-                            ],
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.vertical(
+                    top: Radius.circular(28),
+                  ),
+                ),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 42,
+                          height: 5,
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade300,
+                            borderRadius: BorderRadius.circular(20),
                           ),
                         ),
-                        IconButton(
-                          onPressed: () => Navigator.pop(context),
-                          icon: const Icon(Icons.close),
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 22),
-
-                    const Text(
-                      'Categoría',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: Colors.black87,
                       ),
-                    ),
-                    const SizedBox(height: 8),
+                      const SizedBox(height: 20),
 
-                    DropdownButtonFormField<String>(
-                      value: selectedCategory,
-                      decoration: InputDecoration(
-                        filled: true,
-                        fillColor: Colors.grey.shade100,
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 14,
-                        ),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(16),
-                          borderSide: BorderSide.none,
-                        ),
-                      ),
-                      items: categories.map((category) {
-                        return DropdownMenuItem(
-                          value: category,
-                          child: Row(
-                            children: [
-                              Icon(
-                                _getCategoryIcon(category),
-                                size: 20,
-                                color: _getCategoryColor(category),
-                              ),
-                              const SizedBox(width: 10),
-                              Text(category),
-                            ],
-                          ),
-                        );
-                      }).toList(),
-                      onChanged: (value) {
-                        if (value == null) return;
-                        setModalState(() {
-                          selectedCategory = value;
-                        });
-                      },
-                    ),
-
-                    const SizedBox(height: 18),
-
-                    const Text(
-                      'Nombre de la tarea',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: Colors.black87,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-
-                    TextField(
-                      controller: titleCtrl,
-                      textCapitalization: TextCapitalization.sentences,
-                      decoration: InputDecoration(
-                        hintText: selectedCategory == 'Medicamentos'
-                            ? 'Ej: Metformina 500mg'
-                            : selectedCategory == 'Alimentación'
-                                ? 'Ej: Almuerzo'
-                                : selectedCategory == 'Higiene'
-                                    ? 'Ej: Baño'
-                                    : 'Ej: Visita familiar',
-                        filled: true,
-                        fillColor: Colors.grey.shade100,
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 14,
-                        ),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(16),
-                          borderSide: BorderSide.none,
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(height: 18),
-
-                    const Text(
-                      'Horario',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: Colors.black87,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-
-                    Container(
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade100,
-                        borderRadius: BorderRadius.circular(18),
-                      ),
-                      child: Row(
+                      Row(
                         children: [
                           Expanded(
-                            child: DropdownButtonFormField<String>(
-                              value: selectedHour,
-                              decoration: const InputDecoration(
-                                labelText: 'Hora',
-                                border: InputBorder.none,
-                              ),
-                              items: hours.map((hour) {
-                                return DropdownMenuItem(
-                                  value: hour,
-                                  child: Text(hour),
-                                );
-                              }).toList(),
-                              onChanged: (value) {
-                                if (value == null) return;
-                                setModalState(() {
-                                  selectedHour = value;
-                                });
-                              },
-                            ),
-                          ),
-
-                          const SizedBox(width: 12),
-
-                          Expanded(
-                            child: DropdownButtonFormField<String>(
-                              value: selectedMinute,
-                              decoration: const InputDecoration(
-                                labelText: 'Min',
-                                border: InputBorder.none,
-                              ),
-                              items: minutes.map((minute) {
-                                return DropdownMenuItem(
-                                  value: minute,
-                                  child: Text(minute),
-                                );
-                              }).toList(),
-                              onChanged: (value) {
-                                if (value == null) return;
-                                setModalState(() {
-                                  selectedMinute = value;
-                                });
-                              },
-                            ),
-                          ),
-
-                          const SizedBox(width: 12),
-
-                          Expanded(
-                            child: DropdownButtonFormField<String>(
-                              value: selectedPeriod,
-                              decoration: const InputDecoration(
-                                labelText: 'AM/PM',
-                                border: InputBorder.none,
-                              ),
-                              items: const [
-                                DropdownMenuItem(
-                                  value: 'AM',
-                                  child: Text('AM'),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Agregar tarea',
+                                  style: TextStyle(
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.w800,
+                                    color: Colors.black87,
+                                  ),
                                 ),
-                                DropdownMenuItem(
-                                  value: 'PM',
-                                  child: Text('PM'),
+                                const SizedBox(height: 4),
+                                Text(
+                                  widget.name,
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.black54,
+                                  ),
                                 ),
                               ],
-                              onChanged: (value) {
-                                if (value == null) return;
-                                setModalState(() {
-                                  selectedPeriod = value;
-                                });
-                              },
                             ),
+                          ),
+                          IconButton(
+                            onPressed: () => Navigator.pop(context),
+                            icon: const Icon(Icons.close),
                           ),
                         ],
                       ),
-                    ),
 
-                    const SizedBox(height: 10),
+                      const SizedBox(height: 22),
 
-                    Text(
-                      'Horario seleccionado: $selectedHour:$selectedMinute $selectedPeriod',
-                      style: const TextStyle(
-                        fontSize: 13,
-                        color: Colors.black54,
-                        fontWeight: FontWeight.w600,
+                      const Text(
+                        'Categoría',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: Colors.black87,
+                        ),
                       ),
-                    ),
+                      const SizedBox(height: 8),
 
-                    const SizedBox(height: 24),
-
-                    SizedBox(
-                      width: double.infinity,
-                      height: 54,
-                      child: ElevatedButton.icon(
-                        onPressed: () async {
-                          final title = titleCtrl.text.trim();
-
-                          if (title.isEmpty) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Completa el nombre de la tarea'),
-                              ),
-                            );
-                            return;
-                          }
-
-                          final formattedTime =
-                              '$selectedHour:$selectedMinute $selectedPeriod';
-
-                          await _dbService.addTask(
-                            patientId: widget.patientId,
-                            title: title,
-                            time: formattedTime,
-                            category: selectedCategory,
-                          );
-
-                          if (!context.mounted) return;
-
-                          Navigator.pop(context);
-
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Tarea agregada correctamente'),
-                              backgroundColor: Color(0xFF00C853),
+                      DropdownButtonFormField<String>(
+                        value: selectedCategory,
+                        decoration: InputDecoration(
+                          filled: true,
+                          fillColor: Colors.grey.shade100,
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 14,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                        items: categories.map((category) {
+                          return DropdownMenuItem(
+                            value: category,
+                            child: Row(
+                              children: [
+                                Icon(
+                                  _getCategoryIcon(category),
+                                  size: 20,
+                                  color: _getCategoryColor(category),
+                                ),
+                                const SizedBox(width: 10),
+                                Text(category),
+                              ],
                             ),
                           );
+                        }).toList(),
+                        onChanged: (value) {
+                          if (value == null) return;
+                          setModalState(() {
+                            selectedCategory = value;
+                          });
                         },
-                        icon: const Icon(Icons.add, color: Colors.white),
-                        label: const Text(
-                          'Guardar tarea',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w800,
-                            fontSize: 16,
+                      ),
+
+                      const SizedBox(height: 18),
+
+                      Text(
+                        selectedCategory == 'Medicamentos'
+                            ? 'Toma de medicamentos'
+                            : selectedCategory == 'Alimentación'
+                                ? 'Tipo de alimentación'
+                                : selectedCategory == 'Salidas / Visitas'
+                                    ? 'Nombre de la visita o lugar de salida'
+                                    : 'Nombre de la tarea',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+
+                      if (selectedCategory == 'Alimentación')
+                        DropdownButtonFormField<String>(
+                          value: selectedMeal,
+                          decoration: InputDecoration(
+                            filled: true,
+                            fillColor: Colors.grey.shade100,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 14,
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              borderSide: BorderSide.none,
+                            ),
+                          ),
+                          items: mealOptions.map((meal) {
+                            return DropdownMenuItem(
+                              value: meal,
+                              child: Text(meal),
+                            );
+                          }).toList(),
+                          onChanged: (value) {
+                            if (value == null) return;
+                            setModalState(() {
+                              selectedMeal = value;
+                            });
+                          },
+                        )
+                      else
+                        TextField(
+                          controller: titleCtrl,
+                          textCapitalization: TextCapitalization.sentences,
+                          decoration: InputDecoration(
+                            hintText: selectedCategory == 'Medicamentos'
+                                ? 'Ej: Metformina 500mg'
+                                : selectedCategory == 'Higiene'
+                                    ? 'Ej: Baño'
+                                    : 'Ej: Visita familiar o lugar de salida',
+                            filled: true,
+                            fillColor: Colors.grey.shade100,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 14,
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              borderSide: BorderSide.none,
+                            ),
                           ),
                         ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF00C853),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
+
+                      const SizedBox(height: 18),
+
+                      const Text(
+                        'Horario',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+
+                      Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade100,
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: DropdownButtonFormField<String>(
+                                value: selectedHour,
+                                decoration: const InputDecoration(
+                                  labelText: 'Hora',
+                                  border: InputBorder.none,
+                                ),
+                                items: hours.map((hour) {
+                                  return DropdownMenuItem(
+                                    value: hour,
+                                    child: Text(hour),
+                                  );
+                                }).toList(),
+                                onChanged: (value) {
+                                  if (value == null) return;
+                                  setModalState(() {
+                                    selectedHour = value;
+                                  });
+                                },
+                              ),
+                            ),
+
+                            const SizedBox(width: 12),
+
+                            Expanded(
+                              child: DropdownButtonFormField<String>(
+                                value: selectedMinute,
+                                decoration: const InputDecoration(
+                                  labelText: 'Min',
+                                  border: InputBorder.none,
+                                ),
+                                items: minutes.map((minute) {
+                                  return DropdownMenuItem(
+                                    value: minute,
+                                    child: Text(minute),
+                                  );
+                                }).toList(),
+                                onChanged: (value) {
+                                  if (value == null) return;
+                                  setModalState(() {
+                                    selectedMinute = value;
+                                  });
+                                },
+                              ),
+                            ),
+
+                            const SizedBox(width: 12),
+
+                            Expanded(
+                              child: DropdownButtonFormField<String>(
+                                value: selectedPeriod,
+                                decoration: const InputDecoration(
+                                  labelText: 'AM/PM',
+                                  border: InputBorder.none,
+                                ),
+                                items: const [
+                                  DropdownMenuItem(
+                                    value: 'AM',
+                                    child: Text('AM'),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'PM',
+                                    child: Text('PM'),
+                                  ),
+                                ],
+                                onChanged: (value) {
+                                  if (value == null) return;
+                                  setModalState(() {
+                                    selectedPeriod = value;
+                                  });
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(height: 10),
+
+                      Text(
+                        'Horario seleccionado: $selectedHour:$selectedMinute $selectedPeriod',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: Colors.black54,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+
+                      const SizedBox(height: 24),
+
+                      SizedBox(
+                        width: double.infinity,
+                        height: 54,
+                        child: ElevatedButton.icon(
+                          onPressed: () async {
+                            final title = selectedCategory == 'Alimentación'
+                                ? selectedMeal
+                                : titleCtrl.text.trim();
+
+                            if (title.isEmpty) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    selectedCategory == 'Medicamentos'
+                                        ? 'Completa el nombre del medicamento'
+                                        : selectedCategory == 'Salidas / Visitas'
+                                            ? 'Completa la visita o lugar de salida'
+                                            : 'Completa el nombre de la tarea',
+                                  ),
+                                ),
+                              );
+                              return;
+                            }
+
+                            final formattedTime =
+                                '$selectedHour:$selectedMinute $selectedPeriod';
+
+                            await _dbService.addTask(
+                              patientId: widget.patientId,
+                              title: title,
+                              time: formattedTime,
+                              category: selectedCategory,
+                            );
+
+                            if (!context.mounted) return;
+
+                            Navigator.pop(context);
+
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Tarea agregada correctamente'),
+                                backgroundColor: Color(0xFF00C853),
+                              ),
+                            );
+                          },
+                          icon: const Icon(Icons.add, color: Colors.white),
+                          label: const Text(
+                            'Guardar tarea',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 16,
+                            ),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF00C853),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ),
-          );
-        },
-      );
-    },
-  );
-}
+            );
+          },
+        );
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1126,22 +1210,34 @@ void _showAddTaskDialog() {
 
   Widget _buildAssignmentsTab(BuildContext context) {
     final String adminCentroId = SessionService().centroId;
-    final List<String> dias = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+    final List<String> dias = [
+      'Lunes',
+      'Martes',
+      'Miércoles',
+      'Jueves',
+      'Viernes',
+      'Sábado',
+      'Domingo',
+    ];
 
     return StreamBuilder<QuerySnapshot>(
       stream: _dbService.getCuidadoresStream(),
       builder: (context, caregiversSnapshot) {
         if (caregiversSnapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator(color: AppTheme.blue));
+          return const Center(
+            child: CircularProgressIndicator(color: AppTheme.blue),
+          );
         }
 
         if (caregiversSnapshot.hasError) {
-          return const Center(child: Text('Error al obtener la lista de cuidadores.'));
+          return const Center(
+            child: Text('Error al obtener la lista de cuidadores.'),
+          );
         }
 
-        // Crear mapa uid -> nombre para buscar rápido
         Map<String, String> caregiverNames = {};
         List<QueryDocumentSnapshot> caregiversDocs = [];
+
         if (caregiversSnapshot.hasData) {
           caregiversDocs = caregiversSnapshot.data!.docs.where((doc) {
             var data = doc.data() as Map<String, dynamic>;
@@ -1150,23 +1246,33 @@ void _showAddTaskDialog() {
           }).toList();
 
           for (var doc in caregiversDocs) {
-            caregiverNames[doc.id] = (doc.data() as Map<String, dynamic>)['nombre'] ?? 'Sin nombre';
+            caregiverNames[doc.id] =
+                (doc.data() as Map<String, dynamic>)['nombre'] ?? 'Sin nombre';
           }
         }
 
         return StreamBuilder<DocumentSnapshot>(
-          stream: FirebaseFirestore.instance.collection('pacientes').doc(widget.patientId).snapshots(),
+          stream: FirebaseFirestore.instance
+              .collection('pacientes')
+              .doc(widget.patientId)
+              .snapshots(),
           builder: (context, patientSnapshot) {
             if (patientSnapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator(color: AppTheme.blue));
+              return const Center(
+                child: CircularProgressIndicator(color: AppTheme.blue),
+              );
             }
 
             if (!patientSnapshot.hasData || !patientSnapshot.data!.exists) {
-              return const Center(child: Text('No se pudo cargar la información del paciente.'));
+              return const Center(
+                child: Text('No se pudo cargar la información del paciente.'),
+              );
             }
 
-            var patientData = patientSnapshot.data!.data() as Map<String, dynamic>? ?? {};
-            List<String> asignaciones = List<String>.from(patientData['asignaciones'] ?? []);
+            var patientData =
+                patientSnapshot.data!.data() as Map<String, dynamic>? ?? {};
+            List<String> asignaciones =
+                List<String>.from(patientData['asignaciones'] ?? []);
 
             return ListView.separated(
               padding: const EdgeInsets.all(20.0),
@@ -1177,7 +1283,6 @@ void _showAddTaskDialog() {
                 String normalizedDia = _normalizeDia(dia);
                 String prefix = '${normalizedDia}_';
 
-                // Filtrar uids asignados a este día específico
                 List<String> assignedUids = asignaciones
                     .where((asig) => asig.startsWith(prefix))
                     .map((asig) => asig.substring(prefix.length))
@@ -1195,7 +1300,10 @@ void _showAddTaskDialog() {
                       ),
                     ],
                   ),
-                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16.0,
+                    vertical: 12.0,
+                  ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -1204,10 +1312,18 @@ void _showAddTaskDialog() {
                         children: [
                           Text(
                             dia,
-                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87),
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black87,
+                            ),
                           ),
                           IconButton(
-                            icon: const Icon(Icons.add_circle_outline, color: AppTheme.blue, size: 24),
+                            icon: const Icon(
+                              Icons.add_circle_outline,
+                              color: AppTheme.blue,
+                              size: 24,
+                            ),
                             onPressed: () {
                               _showAssignCaregiverDialog(
                                 context: context,
@@ -1223,17 +1339,25 @@ void _showAddTaskDialog() {
                       assignedUids.isEmpty
                           ? const Text(
                               'Sin cuidadores asignados',
-                              style: TextStyle(color: Colors.grey, fontSize: 13, fontStyle: FontStyle.italic),
+                              style: TextStyle(
+                                color: Colors.grey,
+                                fontSize: 13,
+                                fontStyle: FontStyle.italic,
+                              ),
                             )
                           : Wrap(
                               spacing: 8,
                               runSpacing: 8,
                               children: assignedUids.map((uid) {
-                                String nombreCuidador = caregiverNames[uid] ?? 'Cargando...';
+                                String nombreCuidador =
+                                    caregiverNames[uid] ?? 'Cargando...';
                                 return Chip(
-                                  backgroundColor: AppTheme.blue.withOpacity(0.08),
+                                  backgroundColor:
+                                      AppTheme.blue.withOpacity(0.08),
                                   side: BorderSide.none,
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
                                   label: Text(
                                     nombreCuidador,
                                     style: const TextStyle(
@@ -1242,24 +1366,39 @@ void _showAddTaskDialog() {
                                       fontSize: 13,
                                     ),
                                   ),
-                                  deleteIcon: const Icon(Icons.cancel, size: 18, color: Colors.redAccent),
+                                  deleteIcon: const Icon(
+                                    Icons.cancel,
+                                    size: 18,
+                                    color: Colors.redAccent,
+                                  ),
                                   onDeleted: () async {
                                     try {
-                                      await _dbService.desasignarCuidadorDePaciente(
+                                      await _dbService
+                                          .desasignarCuidadorDePaciente(
                                         pacienteId: widget.patientId,
                                         cuidadorId: uid,
                                         diaSemana: normalizedDia,
                                       );
+
                                       if (!context.mounted) return;
-                                      ScaffoldMessenger.of(context).showSnackBar(
+
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
                                         SnackBar(
-                                          content: Text('Se quitó a $nombreCuidador de la asignación del $dia'),
+                                          content: Text(
+                                            'Se quitó a $nombreCuidador de la asignación del $dia',
+                                          ),
                                         ),
                                       );
                                     } catch (e) {
                                       if (!context.mounted) return;
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
+                                        SnackBar(
+                                          content: Text('Error: $e'),
+                                          backgroundColor: Colors.red,
+                                        ),
                                       );
                                     }
                                   },
