@@ -18,7 +18,7 @@ class DatabaseService {
       return _db
           .collection('pacientes')
           .where('centroId', isEqualTo: centroId)
-          .snapshots();
+          .snapshots(includeMetadataChanges: true);
     } else {
       // El cuidador ve únicamente los pacientes que tiene asignados hoy en su centro
       String dia = diaSemana ?? _getDiaSemanaActual();
@@ -27,7 +27,7 @@ class DatabaseService {
           .collection('pacientes')
           .where('centroId', isEqualTo: centroId)
           .where('asignaciones', arrayContains: queryFiltro)
-          .snapshots();
+          .snapshots(includeMetadataChanges: true);
     }
   }
 

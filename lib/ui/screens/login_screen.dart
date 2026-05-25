@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'home_screen.dart';
 import '../../core/theme.dart';
 import '../../core/rut_formatter.dart';
@@ -24,20 +25,43 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   void initState() {
     super.initState();
+    _loadLastLoggedRut();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkAutoLogin();
     });
   }
 
+  Future<void> _loadLastLoggedRut() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final lastRut = prefs.getString('last_logged_rut');
+      if (lastRut != null && lastRut.isNotEmpty) {
+        setState(() {
+          _rutController.text = RutFormatter.formatString(lastRut);
+        });
+      }
+    } catch (_) {}
+  }
+
   Future<void> _checkAutoLogin() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user != null) {
-      setState(() => _isLoading = true);
-      try {
+    setState(() => _isLoading = true);
+    try {
+      final hasCachedSession = await SessionService().loadSession();
+      if (hasCachedSession) {
+        if (!mounted) return;
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const HomeScreen()),
+        );
+        return;
+      }
+
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
         final doc = await FirebaseFirestore.instance.collection('usuarios').doc(user.uid).get();
         if (doc.exists) {
           final data = doc.data() as Map<String, dynamic>;
-          SessionService().initialize(
+          await SessionService().initialize(
             uid: user.uid,
             nombre: data['nombre'] ?? data['name'] ?? '',
             rut: data['rut'] ?? '',
@@ -47,16 +71,16 @@ class _LoginScreenState extends State<LoginScreen> {
           if (!mounted) return;
           Navigator.pushReplacement(
             context,
-            MaterialPageRoute(builder: (context) => HomeScreen()),
+            MaterialPageRoute(builder: (context) => const HomeScreen()),
           );
         } else {
-          await FirebaseAuth.instance.signOut();
+          await _authService.signOut();
         }
-      } catch (e) {
-        await FirebaseAuth.instance.signOut();
-      } finally {
-        if (mounted) setState(() => _isLoading = false);
       }
+    } catch (e) {
+      await _authService.signOut();
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 

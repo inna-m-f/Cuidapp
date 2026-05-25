@@ -476,15 +476,41 @@ class _HomeScreenState extends State<HomeScreen> {
                   );
                 }
 
-                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                  return const Center(
-                    child: Text(
-                      'No hay pacientes registrados.',
-                      style: TextStyle(
-                        color: Colors.black54,
-                        fontSize: 16,
+                final isOffline = snapshot.hasData && snapshot.data!.metadata.isFromCache;
+
+                final offlineBanner = Container(
+                  width: double.infinity,
+                  color: Colors.orange.shade100,
+                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 15),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.cloud_off, size: 16, color: Colors.orange.shade800),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Modo sin conexión. Datos cargados de la memoria local.',
+                        style: TextStyle(color: Colors.orange.shade800, fontSize: 12, fontWeight: FontWeight.bold),
                       ),
-                    ),
+                    ],
+                  ),
+                );
+
+                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                  return Column(
+                    children: [
+                      if (isOffline) offlineBanner,
+                      const Expanded(
+                        child: Center(
+                          child: Text(
+                            'No hay pacientes registrados.',
+                            style: TextStyle(
+                              color: Colors.black54,
+                              fontSize: 16,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   );
                 }
 
@@ -504,46 +530,58 @@ class _HomeScreenState extends State<HomeScreen> {
                   }).toList();
                 }
 
+                Widget mainContent;
                 if (docs.isEmpty) {
-                  return const Center(
-                    child: Text(
-                      'No se encontraron coincidencias.',
-                      style: TextStyle(
-                        color: Colors.black54,
-                        fontSize: 16,
+                  mainContent = const Expanded(
+                    child: Center(
+                      child: Text(
+                        'No se encontraron coincidencias.',
+                        style: TextStyle(
+                          color: Colors.black54,
+                          fontSize: 16,
+                        ),
                       ),
+                    ),
+                  );
+                } else {
+                  mainContent = Expanded(
+                    child: ListView.separated(
+                      padding: const EdgeInsets.only(
+                        left: 20.0,
+                        right: 20.0,
+                        bottom: 80.0,
+                      ),
+                      itemCount: docs.length,
+                      separatorBuilder: (context, index) =>
+                          const SizedBox(height: 15),
+                      itemBuilder: (context, index) {
+                        var doc = docs[index];
+                        var data = doc.data() as Map<String, dynamic>;
+
+                        String patientId = doc.id;
+                        String initials = data['initials'] ?? '';
+                        String name = data['name'] ?? 'Sin nombre';
+                        String details = data['details'] ?? '';
+                        String status = data['status'] ?? 'Estable';
+
+                        return _buildPatientCard(
+                          context,
+                          patientId: patientId,
+                          initials: initials,
+                          name: name,
+                          details: details,
+                          status: status,
+                        );
+                      },
                     ),
                   );
                 }
 
-                return ListView.separated(
-                  padding: const EdgeInsets.only(
-                    left: 20.0,
-                    right: 20.0,
-                    bottom: 80.0,
-                  ),
-                  itemCount: docs.length,
-                  separatorBuilder: (context, index) =>
-                      const SizedBox(height: 15),
-                  itemBuilder: (context, index) {
-                    var doc = docs[index];
-                    var data = doc.data() as Map<String, dynamic>;
-
-                    String patientId = doc.id;
-                    String initials = data['initials'] ?? '';
-                    String name = data['name'] ?? 'Sin nombre';
-                    String details = data['details'] ?? '';
-                    String status = data['status'] ?? 'Estable';
-
-                    return _buildPatientCard(
-                      context,
-                      patientId: patientId,
-                      initials: initials,
-                      name: name,
-                      details: details,
-                      status: status,
-                    );
-                  },
+                return Column(
+                  children: [
+                    if (isOffline) offlineBanner,
+                    mainContent,
+                  ],
                 );
               },
             ),

@@ -1,6 +1,34 @@
 import 'package:flutter/services.dart';
 
 class RutFormatter extends TextInputFormatter {
+  static String formatString(String rut) {
+    if (rut.isEmpty) return '';
+    String clean = rut.replaceAll(RegExp(r'[^0-9kK]'), '');
+    if (clean.length > 9) {
+      clean = clean.substring(0, 9);
+    }
+    if (clean.isEmpty) return '';
+
+    String dv = clean.substring(clean.length - 1).toUpperCase();
+    String digits = clean.substring(0, clean.length - 1);
+
+    if (digits.isEmpty) {
+      return dv;
+    } else {
+      String formattedDigits = '';
+      int count = 0;
+      for (int i = digits.length - 1; i >= 0; i--) {
+        formattedDigits = digits[i] + formattedDigits;
+        count++;
+        if (count == 3 && i > 0) {
+          formattedDigits = '.$formattedDigits';
+          count = 0;
+        }
+      }
+      return '$formattedDigits-$dv';
+    }
+  }
+
   @override
   TextEditingValue formatEditUpdate(
     TextEditingValue oldValue,

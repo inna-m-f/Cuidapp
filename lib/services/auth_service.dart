@@ -30,7 +30,7 @@ class AuthService {
       Map<String, dynamic> data = userDoc.data() as Map<String, dynamic>;
 
       // 3. Inicializar el SessionService con la información obtenida
-      SessionService().initialize(
+      await SessionService().initialize(
         uid: uid,
         nombre: data['nombre'] ?? data['name'] ?? '',
         rut: data['rut'] ?? '',
@@ -53,6 +53,6 @@ class AuthService {
   // Cerrar sesión
   Future<void> signOut() async {
     await _auth.signOut();
-    SessionService().clear();
+    await SessionService().clear();
   }
 }
