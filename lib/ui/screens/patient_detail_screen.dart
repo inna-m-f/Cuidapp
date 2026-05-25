@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/theme.dart';
 import '../../services/database_service.dart';
 import '../../services/session_service.dart';
+import '../../services/notification_service.dart';
 
 class PatientDetailScreen extends StatefulWidget {
   final String patientId;
@@ -769,13 +770,23 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                             final formattedTime =
                                 '$selectedHour:$selectedMinute $selectedPeriod';
 
-                            await _dbService.addTask(
-                              patientId: widget.patientId,
-                              title: title,
-                              time: formattedTime,
-                              category: selectedCategory,
-                              diasSemana: selectedDays.toList(),
-                            );
+                            final String taskId = await _dbService.addTask(
+  patientId: widget.patientId,
+  title: title,
+  time: formattedTime,
+  category: selectedCategory,
+  diasSemana: selectedDays.toList(),
+);
+
+if (selectedCategory == 'Medicamentos') {
+  await NotificationService.scheduleMedicationReminder(
+    taskId: taskId,
+    patientName: widget.name,
+    medicationName: title,
+    time: formattedTime,
+    diasSemana: selectedDays.toList(),
+  );
+}
 
                             if (!context.mounted) return;
 

@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
+import 'notification_service.dart';
 
 class DatabaseService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -218,38 +219,62 @@ class DatabaseService {
   }
 
   // 11. Agregar tarea con repetición semanal
-  Future<void> addTask({
-    required String patientId,
-    required String title,
-    required String time,
-    required String category,
-    required List<String> diasSemana,
-  }) async {
-    await _db
-        .collection('pacientes')
-        .doc(patientId)
-        .collection('tareas')
-        .add({
-      'title': title.trim(),
-      'time': time.trim(),
-      'category': category.trim(),
-      'diasSemana': diasSemana,
-      'isCompleted': false,
-      'completedBy': null,
-      'completedAt': null,
-      'completedDates': {},
-      'completedByDates': {},
-      'completedAtDates': {},
-      'fechaCreacion': FieldValue.serverTimestamp(),
-    });
+Future<String> addTask({
+  required String patientId,
+  required String title,
+  required String time,
+  required String category,
+  required List<String> diasSemana,
+}) async {
+  final DocumentReference docRef = await _db
+      .collection('pacientes')
+      .doc(patientId)
+      .collection('tareas')
+      .add({
+    'title': title.trim(),
+    'time': time.trim(),
+    'category': category.trim(),
+    'diasSemana': diasSemana,
+    'isCompleted': false,
+    'completedBy': null,
+    'completedAt': null,
+    'completedDates': {},
+    'completedByDates': {},
+    'completedAtDates': {},
+    'fechaCreacion': FieldValue.serverTimestamp(),
+  });
+
+  return docRef.id;
+}
+Future<void> deleteTask(String patientId, String taskId) async {
+  final DocumentSnapshot doc = await _db
+      .collection('pacientes')
+      .doc(patientId)
+      .collection('tareas')
+      .doc(taskId)
+      .get();
+
+  final Map<String, dynamic>? data =
+      doc.data() as Map<String, dynamic>?;
+
+  if (data != null) {
+    final String category = (data['category'] ?? '').toString();
+    final List<String> diasSemana =
+        List<String>.from(data['diasSemana'] ?? []);
+
+    if (category == 'Medicamentos') {
+      await NotificationService.cancelMedicationReminder(
+        taskId: taskId,
+        diasSemana: diasSemana,
+      );
+    }
   }
 
-  Future<void> deleteTask(String patientId, String taskId) async {
-    await _db
-        .collection('pacientes')
-        .doc(patientId)
-        .collection('tareas')
-        .doc(taskId)
-        .delete();
+  await _db
+      .collection('pacientes')
+      .doc(patientId)
+      .collection('tareas')
+      .doc(taskId)
+      .delete();
   }
 }
