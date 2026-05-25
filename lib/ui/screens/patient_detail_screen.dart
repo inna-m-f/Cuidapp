@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
 import '../../core/theme.dart';
 import '../../services/database_service.dart';
 import '../../services/session_service.dart';
@@ -26,14 +27,7 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
   final DatabaseService _dbService = DatabaseService();
 
   String _normalizeDia(String dia) {
-    switch (dia.toLowerCase()) {
-      case 'miércoles':
-        return 'miercoles';
-      case 'sábado':
-        return 'sabado';
-      default:
-        return dia.toLowerCase();
-    }
+    return dia.toLowerCase().replaceAll('miércoles', 'miercoles').replaceAll('sábado', 'sabado');
   }
 
   void _showAssignCaregiverDialog({
@@ -141,22 +135,23 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
   }
 
   String _formatTime(dynamic value) {
-    final raw = value?.toString().trim() ?? '';
+    final raw = value?.toString().trim().toUpperCase() ?? '';
 
     if (raw.isEmpty) return '';
 
-    final upper = raw.toUpperCase();
-    final amPmRegex = RegExp(r'^(\d{1,2}):(\d{2})\s*(AM|PM)$');
-    final match = amPmRegex.firstMatch(upper);
+    // 1. Try parsing "hh:mm a"
+    try {
+      final dt = DateFormat('h:mm a').parse(raw);
+      return DateFormat('h:mm a').format(dt);
+    } catch (_) {}
 
-    if (match != null) {
-      final hour = int.parse(match.group(1)!);
-      final minute = match.group(2)!;
-      final period = match.group(3)!;
+    // 2. Try parsing "HH:mm"
+    try {
+      final dt = DateFormat('H:mm').parse(raw);
+      return DateFormat('HH:mm').format(dt);
+    } catch (_) {}
 
-      return '$hour:$minute $period';
-    }
-
+    // 3. Fallback for raw numbers like "0800" or "1400"
     final clean = raw.replaceAll(':', '').replaceAll(' ', '');
 
     if (clean.length == 4 && int.tryParse(clean) != null) {
@@ -175,23 +170,19 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
 
     if (raw.isEmpty) return 99999;
 
-    final amPmRegex = RegExp(r'^(\d{1,2}):(\d{2})\s*(AM|PM)$');
-    final match = amPmRegex.firstMatch(raw);
+    // 1. Try parsing "hh:mm a"
+    try {
+      final dt = DateFormat('h:mm a').parse(raw);
+      return dt.hour * 60 + dt.minute;
+    } catch (_) {}
 
-    if (match != null) {
-      int hour = int.parse(match.group(1)!);
-      final minute = int.parse(match.group(2)!);
-      final period = match.group(3)!;
+    // 2. Try parsing "HH:mm"
+    try {
+      final dt = DateFormat('H:mm').parse(raw);
+      return dt.hour * 60 + dt.minute;
+    } catch (_) {}
 
-      if (period == 'AM') {
-        if (hour == 12) hour = 0;
-      } else {
-        if (hour != 12) hour += 12;
-      }
-
-      return hour * 60 + minute;
-    }
-
+    // 3. Fallback for raw numbers like "0800" or "1400"
     final clean = raw.replaceAll(':', '').replaceAll(' ', '');
 
     if (clean.length == 4 && int.tryParse(clean) != null) {
@@ -1210,15 +1201,11 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
 
   Widget _buildAssignmentsTab(BuildContext context) {
     final String adminCentroId = SessionService().centroId;
-    final List<String> dias = [
-      'Lunes',
-      'Martes',
-      'Miércoles',
-      'Jueves',
-      'Viernes',
-      'Sábado',
-      'Domingo',
-    ];
+    final List<String> dias = List.generate(7, (index) {
+      final date = DateTime(2026, 5, 25 + index); // 25th May 2026 is a Monday
+      final weekdayName = DateFormat('EEEE', 'es_ES').format(date);
+      return weekdayName[0].toUpperCase() + weekdayName.substring(1);
+    });
 
     return StreamBuilder<QuerySnapshot>(
       stream: _dbService.getCuidadoresStream(),

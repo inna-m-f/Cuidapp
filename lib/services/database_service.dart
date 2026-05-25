@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:intl/intl.dart';
 
 class DatabaseService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -32,25 +33,8 @@ class DatabaseService {
 
   // Método auxiliar para obtener el día de la semana actual en español sin acentos
   String _getDiaSemanaActual() {
-    DateTime now = DateTime.now();
-    switch (now.weekday) {
-      case DateTime.monday:
-        return 'lunes';
-      case DateTime.tuesday:
-        return 'martes';
-      case DateTime.wednesday:
-        return 'miercoles';
-      case DateTime.thursday:
-        return 'jueves';
-      case DateTime.friday:
-        return 'viernes';
-      case DateTime.saturday:
-        return 'sabado';
-      case DateTime.sunday:
-        return 'domingo';
-      default:
-        return 'lunes';
-    }
+    final String dia = DateFormat('EEEE', 'es_ES').format(DateTime.now()).toLowerCase();
+    return dia.replaceAll('miércoles', 'miercoles').replaceAll('sábado', 'sabado');
   }
 
   // 2. Agregar un Paciente nuevo (Exclusivo Admin)
