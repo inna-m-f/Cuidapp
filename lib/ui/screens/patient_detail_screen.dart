@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:intl/intl.dart';
 import '../../core/theme.dart';
 import '../../services/database_service.dart';
 import '../../services/session_service.dart';
@@ -27,7 +26,14 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
   final DatabaseService _dbService = DatabaseService();
 
   String _normalizeDia(String dia) {
-    return dia.toLowerCase().replaceAll('miércoles', 'miercoles').replaceAll('sábado', 'sabado');
+    switch (dia.toLowerCase()) {
+      case 'miércoles':
+        return 'miercoles';
+      case 'sábado':
+        return 'sabado';
+      default:
+        return dia.toLowerCase();
+    }
   }
 
   void _showAssignCaregiverDialog({
@@ -61,11 +67,11 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                     itemCount: unassigned.length,
                     separatorBuilder: (context, index) => const Divider(),
                     itemBuilder: (context, index) {
-                      var doc = unassigned[index];
-                      var data = doc.data() as Map<String, dynamic>;
-                      String uid = doc.id;
-                      String nombre = data['nombre'] ?? 'Sin nombre';
-                      String rut = data['rut'] ?? '';
+                      final doc = unassigned[index];
+                      final data = doc.data() as Map<String, dynamic>;
+                      final String uid = doc.id;
+                      final String nombre = data['nombre'] ?? 'Sin nombre';
+                      final String rut = data['rut'] ?? '';
 
                       return ListTile(
                         leading: CircleAvatar(
@@ -108,6 +114,8 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                               ),
                             );
                           } catch (e) {
+                            if (!context.mounted) return;
+
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
                                 content: Text('Error: $e'),
@@ -135,23 +143,22 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
   }
 
   String _formatTime(dynamic value) {
-    final raw = value?.toString().trim().toUpperCase() ?? '';
+    final raw = value?.toString().trim() ?? '';
 
     if (raw.isEmpty) return '';
 
-    // 1. Try parsing "hh:mm a"
-    try {
-      final dt = DateFormat('h:mm a').parse(raw);
-      return DateFormat('h:mm a').format(dt);
-    } catch (_) {}
+    final upper = raw.toUpperCase();
+    final amPmRegex = RegExp(r'^(\d{1,2}):(\d{2})\s*(AM|PM)$');
+    final match = amPmRegex.firstMatch(upper);
 
-    // 2. Try parsing "HH:mm"
-    try {
-      final dt = DateFormat('H:mm').parse(raw);
-      return DateFormat('HH:mm').format(dt);
-    } catch (_) {}
+    if (match != null) {
+      final hour = int.parse(match.group(1)!);
+      final minute = match.group(2)!;
+      final period = match.group(3)!;
 
-    // 3. Fallback for raw numbers like "0800" or "1400"
+      return '$hour:$minute $period';
+    }
+
     final clean = raw.replaceAll(':', '').replaceAll(' ', '');
 
     if (clean.length == 4 && int.tryParse(clean) != null) {
@@ -170,19 +177,23 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
 
     if (raw.isEmpty) return 99999;
 
-    // 1. Try parsing "hh:mm a"
-    try {
-      final dt = DateFormat('h:mm a').parse(raw);
-      return dt.hour * 60 + dt.minute;
-    } catch (_) {}
+    final amPmRegex = RegExp(r'^(\d{1,2}):(\d{2})\s*(AM|PM)$');
+    final match = amPmRegex.firstMatch(raw);
 
-    // 2. Try parsing "HH:mm"
-    try {
-      final dt = DateFormat('H:mm').parse(raw);
-      return dt.hour * 60 + dt.minute;
-    } catch (_) {}
+    if (match != null) {
+      int hour = int.parse(match.group(1)!);
+      final minute = int.parse(match.group(2)!);
+      final period = match.group(3)!;
 
-    // 3. Fallback for raw numbers like "0800" or "1400"
+      if (period == 'AM') {
+        if (hour == 12) hour = 0;
+      } else {
+        if (hour != 12) hour += 12;
+      }
+
+      return hour * 60 + minute;
+    }
+
     final clean = raw.replaceAll(':', '').replaceAll(' ', '');
 
     if (clean.length == 4 && int.tryParse(clean) != null) {
@@ -198,6 +209,28 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
     }
 
     return 99999;
+  }
+
+  bool _isCompletedToday(Map<String, dynamic> data) {
+    final fechaActual = _dbService.getFechaActualKey();
+    final completedDates = data['completedDates'];
+
+    if (completedDates is Map<String, dynamic>) {
+      return completedDates[fechaActual] == true;
+    }
+
+    return false;
+  }
+
+  String? _completedByToday(Map<String, dynamic> data) {
+    final fechaActual = _dbService.getFechaActualKey();
+    final completedByDates = data['completedByDates'];
+
+    if (completedByDates is Map<String, dynamic>) {
+      return completedByDates[fechaActual]?.toString();
+    }
+
+    return null;
   }
 
   String _getCategory(Map<String, dynamic> data) {
@@ -318,6 +351,26 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
       'Once',
       'Cena',
     ];
+
+    final List<Map<String, String>> weekDays = [
+      {'label': 'Lunes', 'value': 'lunes'},
+      {'label': 'Martes', 'value': 'martes'},
+      {'label': 'Miércoles', 'value': 'miercoles'},
+      {'label': 'Jueves', 'value': 'jueves'},
+      {'label': 'Viernes', 'value': 'viernes'},
+      {'label': 'Sábado', 'value': 'sabado'},
+      {'label': 'Domingo', 'value': 'domingo'},
+    ];
+
+    final Set<String> selectedDays = {
+      'lunes',
+      'martes',
+      'miercoles',
+      'jueves',
+      'viernes',
+      'sabado',
+      'domingo',
+    };
 
     final List<String> hours = List.generate(
       12,
@@ -440,6 +493,7 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                         }).toList(),
                         onChanged: (value) {
                           if (value == null) return;
+
                           setModalState(() {
                             selectedCategory = value;
                           });
@@ -486,6 +540,7 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                           }).toList(),
                           onChanged: (value) {
                             if (value == null) return;
+
                             setModalState(() {
                               selectedMeal = value;
                             });
@@ -548,6 +603,7 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                                 }).toList(),
                                 onChanged: (value) {
                                   if (value == null) return;
+
                                   setModalState(() {
                                     selectedHour = value;
                                   });
@@ -572,6 +628,7 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                                 }).toList(),
                                 onChanged: (value) {
                                   if (value == null) return;
+
                                   setModalState(() {
                                     selectedMinute = value;
                                   });
@@ -600,6 +657,7 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                                 ],
                                 onChanged: (value) {
                                   if (value == null) return;
+
                                   setModalState(() {
                                     selectedPeriod = value;
                                   });
@@ -619,6 +677,55 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                           color: Colors.black54,
                           fontWeight: FontWeight.w600,
                         ),
+                      ),
+
+                      const SizedBox(height: 18),
+
+                      const Text(
+                        'Días de repetición',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: weekDays.map((day) {
+                          final label = day['label']!;
+                          final value = day['value']!;
+                          final isSelected = selectedDays.contains(value);
+
+                          return FilterChip(
+                            label: Text(label),
+                            selected: isSelected,
+                            selectedColor:
+                                const Color(0xFF00C853).withOpacity(0.18),
+                            checkmarkColor: const Color(0xFF00C853),
+                            labelStyle: TextStyle(
+                              color: isSelected
+                                  ? const Color(0xFF00A86B)
+                                  : Colors.black54,
+                              fontWeight: FontWeight.w700,
+                            ),
+                            side: BorderSide(
+                              color: isSelected
+                                  ? const Color(0xFF00C853)
+                                  : Colors.grey.shade300,
+                            ),
+                            onSelected: (selected) {
+                              setModalState(() {
+                                if (selected) {
+                                  selectedDays.add(value);
+                                } else {
+                                  selectedDays.remove(value);
+                                }
+                              });
+                            },
+                          );
+                        }).toList(),
                       ),
 
                       const SizedBox(height: 24),
@@ -647,6 +754,18 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                               return;
                             }
 
+                            if (selectedDays.isEmpty) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'Selecciona al menos un día de repetición',
+                                  ),
+                                  backgroundColor: Colors.redAccent,
+                                ),
+                              );
+                              return;
+                            }
+
                             final formattedTime =
                                 '$selectedHour:$selectedMinute $selectedPeriod';
 
@@ -655,6 +774,7 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                               title: title,
                               time: formattedTime,
                               category: selectedCategory,
+                              diasSemana: selectedDays.toList(),
                             );
 
                             if (!context.mounted) return;
@@ -798,7 +918,7 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
         }
 
         return StreamBuilder<QuerySnapshot>(
-          stream: _dbService.getPatientTasksStream(widget.patientId),
+          stream: _dbService.getPatientTasksForTodayStream(widget.patientId),
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const Center(
@@ -860,7 +980,7 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                         ),
                         const SizedBox(height: 12),
                         const Text(
-                          'No hay tareas registradas',
+                          'No hay tareas para hoy',
                           style: TextStyle(
                             fontSize: 17,
                             fontWeight: FontWeight.w800,
@@ -869,7 +989,7 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                         ),
                         const SizedBox(height: 6),
                         const Text(
-                          'Agregue medicamentos, higiene, alimentación u otras tareas de cuidado.',
+                          'Agregue tareas o revise los días de repetición configurados.',
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             fontSize: 14,
@@ -913,7 +1033,7 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                   final tasks = entry.value;
                   final completed = tasks.where((doc) {
                     final data = doc.data() as Map<String, dynamic>;
-                    return data['isCompleted'] == true;
+                    return _isCompletedToday(data);
                   }).length;
 
                   return _buildCategoryCard(
@@ -1031,7 +1151,8 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
           ...tasks.map((taskDoc) {
             final data = taskDoc.data() as Map<String, dynamic>;
 
-            final completedByUid = data['completedBy'];
+            final isCompletedToday = _isCompletedToday(data);
+            final completedByUid = _completedByToday(data);
             final caregiverName = completedByUid != null
                 ? caregiverMap[completedByUid]
                 : null;
@@ -1040,7 +1161,7 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
               taskId: taskDoc.id,
               title: data['title'] ?? '',
               time: _formatTime(data['time']),
-              isChecked: data['isCompleted'] ?? false,
+              isChecked: isCompletedToday,
               isAdmin: session.isAdmin,
               caregiverName: caregiverName,
               color: color,
@@ -1201,11 +1322,15 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
 
   Widget _buildAssignmentsTab(BuildContext context) {
     final String adminCentroId = SessionService().centroId;
-    final List<String> dias = List.generate(7, (index) {
-      final date = DateTime(2026, 5, 25 + index); // 25th May 2026 is a Monday
-      final weekdayName = DateFormat('EEEE', 'es_ES').format(date);
-      return weekdayName[0].toUpperCase() + weekdayName.substring(1);
-    });
+    final List<String> dias = [
+      'Lunes',
+      'Martes',
+      'Miércoles',
+      'Jueves',
+      'Viernes',
+      'Sábado',
+      'Domingo',
+    ];
 
     return StreamBuilder<QuerySnapshot>(
       stream: _dbService.getCuidadoresStream(),
@@ -1227,12 +1352,12 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
 
         if (caregiversSnapshot.hasData) {
           caregiversDocs = caregiversSnapshot.data!.docs.where((doc) {
-            var data = doc.data() as Map<String, dynamic>;
-            String cId = data['centroId'] ?? data['centroID'] ?? '';
+            final data = doc.data() as Map<String, dynamic>;
+            final String cId = data['centroId'] ?? data['centroID'] ?? '';
             return cId == adminCentroId;
           }).toList();
 
-          for (var doc in caregiversDocs) {
+          for (final doc in caregiversDocs) {
             caregiverNames[doc.id] =
                 (doc.data() as Map<String, dynamic>)['nombre'] ?? 'Sin nombre';
           }
@@ -1256,9 +1381,9 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
               );
             }
 
-            var patientData =
+            final patientData =
                 patientSnapshot.data!.data() as Map<String, dynamic>? ?? {};
-            List<String> asignaciones =
+            final List<String> asignaciones =
                 List<String>.from(patientData['asignaciones'] ?? []);
 
             return ListView.separated(
@@ -1266,11 +1391,11 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
               itemCount: dias.length,
               separatorBuilder: (context, index) => const SizedBox(height: 15),
               itemBuilder: (context, index) {
-                String dia = dias[index];
-                String normalizedDia = _normalizeDia(dia);
-                String prefix = '${normalizedDia}_';
+                final String dia = dias[index];
+                final String normalizedDia = _normalizeDia(dia);
+                final String prefix = '${normalizedDia}_';
 
-                List<String> assignedUids = asignaciones
+                final List<String> assignedUids = asignaciones
                     .where((asig) => asig.startsWith(prefix))
                     .map((asig) => asig.substring(prefix.length))
                     .toList();
@@ -1336,8 +1461,9 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                               spacing: 8,
                               runSpacing: 8,
                               children: assignedUids.map((uid) {
-                                String nombreCuidador =
+                                final String nombreCuidador =
                                     caregiverNames[uid] ?? 'Cargando...';
+
                                 return Chip(
                                   backgroundColor:
                                       AppTheme.blue.withOpacity(0.08),

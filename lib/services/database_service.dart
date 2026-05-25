@@ -21,8 +21,9 @@ class DatabaseService {
           .snapshots(includeMetadataChanges: true);
     } else {
       // El cuidador ve únicamente los pacientes que tiene asignados hoy en su centro
-      String dia = diaSemana ?? _getDiaSemanaActual();
-      String queryFiltro = '${dia}_$uidCuidador';
+      final String dia = diaSemana ?? _getDiaSemanaActual();
+      final String queryFiltro = '${dia}_$uidCuidador';
+
       return _db
           .collection('pacientes')
           .where('centroId', isEqualTo: centroId)
@@ -33,8 +34,27 @@ class DatabaseService {
 
   // Método auxiliar para obtener el día de la semana actual en español sin acentos
   String _getDiaSemanaActual() {
-    final String dia = DateFormat('EEEE', 'es_ES').format(DateTime.now()).toLowerCase();
-    return dia.replaceAll('miércoles', 'miercoles').replaceAll('sábado', 'sabado');
+    final String dia =
+        DateFormat('EEEE', 'es_ES').format(DateTime.now()).toLowerCase();
+
+    return dia
+        .replaceAll('miércoles', 'miercoles')
+        .replaceAll('sábado', 'sabado');
+  }
+
+  String getDiaSemanaActual() {
+    return _getDiaSemanaActual();
+  }
+
+  // Fecha actual para registrar cumplimiento diario
+  String getFechaActualKey() {
+    final DateTime now = DateTime.now();
+
+    final String year = now.year.toString();
+    final String month = now.month.toString().padLeft(2, '0');
+    final String day = now.day.toString().padLeft(2, '0');
+
+    return '$year-$month-$day';
   }
 
   // 2. Agregar un Paciente nuevo (Exclusivo Admin)
@@ -58,24 +78,20 @@ class DatabaseService {
 
   // 3. Eliminar un Paciente y limpiar sus tareas en un lote transaccional (Exclusivo Admin)
   Future<void> deletePaciente(String pacienteId) async {
-    // Obtener las tareas del paciente
-    QuerySnapshot tasks = await _db
+    final QuerySnapshot tasks = await _db
         .collection('pacientes')
         .doc(pacienteId)
         .collection('tareas')
         .get();
 
-    WriteBatch batch = _db.batch();
+    final WriteBatch batch = _db.batch();
 
-    // Eliminar todas las tareas del paciente
-    for (var doc in tasks.docs) {
+    for (final doc in tasks.docs) {
       batch.delete(doc.reference);
     }
 
-    // Eliminar el documento del paciente
     batch.delete(_db.collection('pacientes').doc(pacienteId));
 
-    // Comprometer lote en Firestore
     await batch.commit();
   }
 
@@ -85,7 +101,8 @@ class DatabaseService {
     required String diaSemana,
     required String cuidadorId,
   }) async {
-    String asignacion = '${diaSemana.toLowerCase()}_$cuidadorId';
+    final String asignacion = '${diaSemana.toLowerCase()}_$cuidadorId';
+
     await _db.collection('pacientes').doc(pacienteId).update({
       'asignaciones': FieldValue.arrayUnion([asignacion]),
     });
@@ -97,7 +114,8 @@ class DatabaseService {
     required String diaSemana,
     required String cuidadorId,
   }) async {
-    String asignacion = '${diaSemana.toLowerCase()}_$cuidadorId';
+    final String asignacion = '${diaSemana.toLowerCase()}_$cuidadorId';
+
     await _db.collection('pacientes').doc(pacienteId).update({
       'asignaciones': FieldValue.arrayRemove([asignacion]),
     });
@@ -117,25 +135,25 @@ class DatabaseService {
     required String centroId,
     required String contrasenaCentro,
   }) async {
-    String cleanRut = rut.replaceAll('.', '').replaceAll('-', '').trim();
-    String email = '$cleanRut@cuidapp.com';
+    final String cleanRut = rut.replaceAll('.', '').replaceAll('-', '').trim();
+    final String email = '$cleanRut@cuidapp.com';
 
-    // Creamos una FirebaseApp secundaria temporal para no desloguear al Admin
-    FirebaseApp tempApp = await Firebase.initializeApp(
+    final FirebaseApp tempApp = await Firebase.initializeApp(
       name: 'TempRegisterApp',
       options: Firebase.app().options,
     );
 
     try {
-      FirebaseAuth tempAuth = FirebaseAuth.instanceFor(app: tempApp);
-      UserCredential credential = await tempAuth.createUserWithEmailAndPassword(
+      final FirebaseAuth tempAuth = FirebaseAuth.instanceFor(app: tempApp);
+
+      final UserCredential credential =
+          await tempAuth.createUserWithEmailAndPassword(
         email: email,
         password: contrasenaCentro,
       );
 
-      String uidNuevoCuidador = credential.user!.uid;
+      final String uidNuevoCuidador = credential.user!.uid;
 
-      // Guardamos la info del nuevo cuidador en Firestore usando la app principal
       await _db.collection('usuarios').doc(uidNuevoCuidador).set({
         'rut': cleanRut,
         'nombre': nombre,
@@ -146,43 +164,92 @@ class DatabaseService {
 
       await tempAuth.signOut();
     } finally {
-      // Destruimos la app temporal
       await tempApp.delete();
     }
   }
 
-  // 8. Tareas del paciente (Subcolección)
+  // 8. Todas las tareas del paciente
   Stream<QuerySnapshot> getPatientTasksStream(String patientId) {
-    return _db.collection('pacientes').doc(patientId).collection('tareas').snapshots();
+    return _db
+        .collection('pacientes')
+        .doc(patientId)
+        .collection('tareas')
+        .snapshots();
   }
 
-  // RF-09: Actualización de tarea con trazabilidad (Agregado parámetro 'uid')
-  Future<void> updateTaskStatus(String patientId, String taskId, bool isCompleted, String uid) async {
-    await _db.collection('pacientes').doc(patientId).collection('tareas').doc(taskId).update({
+  // 9. Tareas del paciente solo para el día actual
+  Stream<QuerySnapshot> getPatientTasksForTodayStream(String patientId) {
+    final String diaActual = _getDiaSemanaActual();
+
+    return _db
+        .collection('pacientes')
+        .doc(patientId)
+        .collection('tareas')
+        .where('diasSemana', arrayContains: diaActual)
+        .snapshots();
+  }
+
+  // 10. Actualización de tarea con trazabilidad diaria
+  Future<void> updateTaskStatus(
+    String patientId,
+    String taskId,
+    bool isCompleted,
+    String uid,
+  ) async {
+    final String fechaActual = getFechaActualKey();
+
+    await _db
+        .collection('pacientes')
+        .doc(patientId)
+        .collection('tareas')
+        .doc(taskId)
+        .update({
+      // Se mantiene compatibilidad con la lógica antigua
       'isCompleted': isCompleted,
       'completedBy': isCompleted ? uid : null,
       'completedAt': isCompleted ? FieldValue.serverTimestamp() : null,
+
+      // Nueva lógica diaria
+      'completedDates.$fechaActual': isCompleted,
+      'completedByDates.$fechaActual': isCompleted ? uid : null,
+      'completedAtDates.$fechaActual':
+          isCompleted ? FieldValue.serverTimestamp() : null,
     });
   }
 
-Future<void> addTask({
-  required String patientId,
-  required String title,
-  required String time,
-  required String category,
-}) async {
-  await _db.collection('pacientes').doc(patientId).collection('tareas').add({
-    'title': title.trim(),
-    'time': time.trim(),
-    'category': category.trim(),
-    'isCompleted': false,
-    'completedBy': null,
-    'completedAt': null,
-    'fechaCreacion': FieldValue.serverTimestamp(),
-  });
-}
+  // 11. Agregar tarea con repetición semanal
+  Future<void> addTask({
+    required String patientId,
+    required String title,
+    required String time,
+    required String category,
+    required List<String> diasSemana,
+  }) async {
+    await _db
+        .collection('pacientes')
+        .doc(patientId)
+        .collection('tareas')
+        .add({
+      'title': title.trim(),
+      'time': time.trim(),
+      'category': category.trim(),
+      'diasSemana': diasSemana,
+      'isCompleted': false,
+      'completedBy': null,
+      'completedAt': null,
+      'completedDates': {},
+      'completedByDates': {},
+      'completedAtDates': {},
+      'fechaCreacion': FieldValue.serverTimestamp(),
+    });
+  }
 
   Future<void> deleteTask(String patientId, String taskId) async {
-    await _db.collection('pacientes').doc(patientId).collection('tareas').doc(taskId).delete();
+    await _db
+        .collection('pacientes')
+        .doc(patientId)
+        .collection('tareas')
+        .doc(taskId)
+        .delete();
   }
 }
