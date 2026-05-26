@@ -242,6 +242,44 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
     return false;
   }
 
+  String _getDiaSemanaActual() {
+    final int weekday = DateTime.now().weekday;
+    switch (weekday) {
+      case DateTime.monday:
+        return 'lunes';
+      case DateTime.tuesday:
+        return 'martes';
+      case DateTime.wednesday:
+        return 'miercoles';
+      case DateTime.thursday:
+        return 'jueves';
+      case DateTime.friday:
+        return 'viernes';
+      case DateTime.saturday:
+        return 'sabado';
+      case DateTime.sunday:
+        return 'domingo';
+      default:
+        return 'lunes';
+    }
+  }
+
+  bool _isTaskScheduledForToday(Map<String, dynamic> data) {
+    final List<String> diasSemana = List<String>.from(data['diasSemana'] ?? []);
+    final String hoy = _getDiaSemanaActual();
+    
+    final normalizedDias = diasSemana.map((d) {
+      return d.trim().toLowerCase()
+          .replaceAll('á', 'a')
+          .replaceAll('é', 'e')
+          .replaceAll('í', 'i')
+          .replaceAll('ó', 'o')
+          .replaceAll('ú', 'u');
+    }).toList();
+
+    return normalizedDias.contains(hoy);
+  }
+
   String? _completedByToday(Map<String, dynamic> data) {
     final fechaActual = _dbService.getFechaActualKey();
     final completedByDates = data['completedByDates'];
@@ -797,14 +835,16 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
   diasSemana: selectedDays.toList(),
 );
 
-  await NotificationService.scheduleMedicationReminder(
-    taskId: taskId,
-    patientName: widget.name,
-    medicationName: title,
-    time: formattedTime,
-    diasSemana: selectedDays.toList(),
-    category: selectedCategory,
-  );
+  if (!SessionService().isAdmin) {
+    await NotificationService.scheduleMedicationReminder(
+      taskId: taskId,
+      patientName: widget.name,
+      medicationName: title,
+      time: formattedTime,
+      diasSemana: selectedDays.toList(),
+      category: selectedCategory,
+    );
+  }
 
                             if (!context.mounted) return;
 
@@ -1058,8 +1098,15 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
 
                 ...groupedTasks.entries.map((entry) {
                   final category = entry.key;
-                  final tasks = entry.value;
-                  final completed = tasks.where((doc) {
+                  final allTasks = entry.value;
+
+                  // Filtrar las tareas que están programadas para hoy
+                  final tasksToday = allTasks.where((doc) {
+                    final data = doc.data() as Map<String, dynamic>;
+                    return _isTaskScheduledForToday(data);
+                  }).toList();
+
+                  final completed = tasksToday.where((doc) {
                     final data = doc.data() as Map<String, dynamic>;
                     return _isCompletedToday(data);
                   }).length;
@@ -1067,8 +1114,8 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                   return _buildCategoryCard(
                     category: category,
                     completed: completed,
-                    total: tasks.length,
-                    tasks: tasks,
+                    total: tasksToday.length,
+                    tasks: tasksToday,
                     caregiverMap: caregiverMap,
                     session: session,
                   );

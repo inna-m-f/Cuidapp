@@ -3,6 +3,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'session_service.dart';
 
 class NotificationService {
   NotificationService._();
@@ -313,6 +314,16 @@ class NotificationService {
     required List<QueryDocumentSnapshot> patientDocs,
   }) async {
     if (kIsWeb) return;
+
+    final session = SessionService();
+    if (session.isAdmin) {
+      try {
+        await _notifications.cancelAll();
+      } catch (e) {
+        debugPrint('Error al limpiar alarmas de admin: $e');
+      }
+      return;
+    }
 
     try {
       // 1. Cancelar todas las alarmas previas en este dispositivo para empezar limpio
