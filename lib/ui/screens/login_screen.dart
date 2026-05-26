@@ -136,12 +136,22 @@ class _LoginScreenState extends State<LoginScreen> {
         child: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.symmetric(vertical: 50.0, horizontal: 20.0),
+              padding: const EdgeInsets.symmetric(vertical: 35.0, horizontal: 20.0),
               child: Column(
-                children: const [
-                  Text('CuidApp', style: TextStyle(fontSize: 42, fontWeight: FontWeight.bold, color: AppTheme.white)),
-                  SizedBox(height: 10),
-                  Text('Gestión de cuidado de adultos\nmayores', textAlign: TextAlign.center, style: TextStyle(fontSize: 16, color: AppTheme.white, height: 1.3)),
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(20),
+                    child: Image.asset(
+                      'images/icono.png',
+                      width: 80,
+                      height: 80,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text('CuidApp', style: TextStyle(fontSize: 42, fontWeight: FontWeight.bold, color: AppTheme.white)),
+                  const SizedBox(height: 10),
+                  const Text('Gestión de cuidado de adultos\nmayores', textAlign: TextAlign.center, style: TextStyle(fontSize: 16, color: AppTheme.white, height: 1.3)),
                 ],
               ),
             ),

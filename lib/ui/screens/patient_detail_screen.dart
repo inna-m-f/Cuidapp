@@ -797,15 +797,14 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
   diasSemana: selectedDays.toList(),
 );
 
-if (selectedCategory == 'Medicamentos') {
   await NotificationService.scheduleMedicationReminder(
     taskId: taskId,
     patientName: widget.name,
     medicationName: title,
     time: formattedTime,
     diasSemana: selectedDays.toList(),
+    category: selectedCategory,
   );
-}
 
                             if (!context.mounted) return;
 
@@ -1026,8 +1025,10 @@ if (selectedCategory == 'Medicamentos') {
                       ],
                     ),
                   ),
-                  const SizedBox(height: 18),
-                  _buildAddTaskButton(),
+                  if (session.rol != 'cuidador') ...[
+                    const SizedBox(height: 18),
+                    _buildAddTaskButton(),
+                  ],
                 ],
               );
             }
@@ -1073,8 +1074,10 @@ if (selectedCategory == 'Medicamentos') {
                   );
                 }).toList(),
 
-                const SizedBox(height: 8),
-                _buildAddTaskButton(),
+                if (session.rol != 'cuidador') ...[
+                  const SizedBox(height: 8),
+                  _buildAddTaskButton(),
+                ],
               ],
             );
           },

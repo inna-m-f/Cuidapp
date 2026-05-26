@@ -70,7 +70,6 @@ class _HomeScreenState extends State<HomeScreen> {
             .collection('pacientes')
             .doc(patientId)
             .collection('tareas')
-            .where('category', isEqualTo: 'Medicamentos')
             .snapshots()
             .listen((tasksSnapshot) {
               NotificationService.syncCaregiverReminders(
