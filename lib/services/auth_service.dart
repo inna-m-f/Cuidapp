@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'session_service.dart';
+import 'notification_service.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -52,6 +53,7 @@ class AuthService {
 
   // Cerrar sesión
   Future<void> signOut() async {
+    await NotificationService.cancelAllReminders();
     await _auth.signOut();
     await SessionService().clear();
   }

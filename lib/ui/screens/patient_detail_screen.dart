@@ -25,6 +25,25 @@ class PatientDetailScreen extends StatefulWidget {
 
 class _PatientDetailScreenState extends State<PatientDetailScreen> {
   final DatabaseService _dbService = DatabaseService();
+  late Stream<QuerySnapshot> _caregiversStream;
+  late Stream<QuerySnapshot> _tasksStream;
+  late Stream<QuerySnapshot> _allCuidadoresStream;
+  late Stream<DocumentSnapshot> _patientSnapshotStream;
+
+  @override
+  void initState() {
+    super.initState();
+    _caregiversStream = FirebaseFirestore.instance
+        .collection('usuarios')
+        .where('rol', isEqualTo: 'cuidador')
+        .snapshots();
+    _tasksStream = _dbService.getPatientTasksForTodayStream(widget.patientId);
+    _allCuidadoresStream = _dbService.getCuidadoresStream();
+    _patientSnapshotStream = FirebaseFirestore.instance
+        .collection('pacientes')
+        .doc(widget.patientId)
+        .snapshots();
+  }
 
   String _normalizeDia(String dia) {
     switch (dia.toLowerCase()) {
@@ -914,10 +933,7 @@ if (selectedCategory == 'Medicamentos') {
 
   Widget _buildTasksTab(BuildContext context, SessionService session) {
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('usuarios')
-          .where('rol', isEqualTo: 'cuidador')
-          .snapshots(),
+      stream: _caregiversStream,
       builder: (context, snapshotCaregivers) {
         final Map<String, String> caregiverMap = {};
 
@@ -929,7 +945,7 @@ if (selectedCategory == 'Medicamentos') {
         }
 
         return StreamBuilder<QuerySnapshot>(
-          stream: _dbService.getPatientTasksForTodayStream(widget.patientId),
+          stream: _tasksStream,
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const Center(
@@ -1344,7 +1360,7 @@ if (selectedCategory == 'Medicamentos') {
     ];
 
     return StreamBuilder<QuerySnapshot>(
-      stream: _dbService.getCuidadoresStream(),
+      stream: _allCuidadoresStream,
       builder: (context, caregiversSnapshot) {
         if (caregiversSnapshot.connectionState == ConnectionState.waiting) {
           return const Center(
@@ -1375,10 +1391,7 @@ if (selectedCategory == 'Medicamentos') {
         }
 
         return StreamBuilder<DocumentSnapshot>(
-          stream: FirebaseFirestore.instance
-              .collection('pacientes')
-              .doc(widget.patientId)
-              .snapshots(),
+          stream: _patientSnapshotStream,
           builder: (context, patientSnapshot) {
             if (patientSnapshot.connectionState == ConnectionState.waiting) {
               return const Center(

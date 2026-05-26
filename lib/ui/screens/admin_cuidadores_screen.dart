@@ -15,6 +15,13 @@ class AdminCuidadoresScreen extends StatefulWidget {
 class _AdminCuidadoresScreenState extends State<AdminCuidadoresScreen> {
   final DatabaseService _dbService = DatabaseService();
   bool _isSaving = false;
+  late Stream<QuerySnapshot> _cuidadoresStream;
+
+  @override
+  void initState() {
+    super.initState();
+    _cuidadoresStream = _dbService.getCuidadoresStream();
+  }
 
   // Formatear el RUT para mostrarlo con puntos y guion en la lista
   String _formatRutToShow(String rut) {
@@ -197,7 +204,7 @@ class _AdminCuidadoresScreenState extends State<AdminCuidadoresScreen> {
         ),
       ),
       body: StreamBuilder<QuerySnapshot>(
-        stream: _dbService.getCuidadoresStream(),
+        stream: _cuidadoresStream,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(

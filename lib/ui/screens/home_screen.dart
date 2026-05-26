@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/theme.dart';
@@ -7,6 +8,7 @@ import '../../services/session_service.dart';
 import 'login_screen.dart';
 import 'patient_detail_screen.dart';
 import 'admin_cuidadores_screen.dart';
+import '../../services/notification_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
@@ -19,6 +21,9 @@ class _HomeScreenState extends State<HomeScreen> {
   final DatabaseService _dbService = DatabaseService();
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+  late Stream<QuerySnapshot> _pacientesStream;
+  List<String>? _lastSyncedPatientIds;
+  final Map<String, StreamSubscription<QuerySnapshot>> _taskSubscriptions = {};
 
   @override
   void initState() {
@@ -28,12 +33,54 @@ class _HomeScreenState extends State<HomeScreen> {
         _searchQuery = _searchController.text.trim();
       });
     });
+
+    final session = SessionService();
+    _pacientesStream = _dbService.getPacientesStream(
+      centroId: session.centroId,
+      rol: session.rol,
+      uidCuidador: session.uid,
+    );
   }
 
   @override
   void dispose() {
     _searchController.dispose();
+    for (final subscription in _taskSubscriptions.values) {
+      subscription.cancel();
+    }
+    _taskSubscriptions.clear();
     super.dispose();
+  }
+
+  void _updateTaskSubscriptions(String uidCuidador, List<QueryDocumentSnapshot> patientDocs) {
+    final List<String> currentIds = patientDocs.map((d) => d.id).toList();
+
+    // 1. Cancelar suscripciones para pacientes que ya no están asignados
+    final keysToRemove = _taskSubscriptions.keys.where((id) => !currentIds.contains(id)).toList();
+    for (final id in keysToRemove) {
+      _taskSubscriptions[id]?.cancel();
+      _taskSubscriptions.remove(id);
+    }
+
+    // 2. Crear suscripciones para nuevos pacientes
+    for (final doc in patientDocs) {
+      final String patientId = doc.id;
+      if (!_taskSubscriptions.containsKey(patientId)) {
+        final subscription = FirebaseFirestore.instance
+            .collection('pacientes')
+            .doc(patientId)
+            .collection('tareas')
+            .where('category', isEqualTo: 'Medicamentos')
+            .snapshots()
+            .listen((tasksSnapshot) {
+              NotificationService.syncCaregiverReminders(
+                uidCuidador: uidCuidador,
+                patientDocs: patientDocs,
+              );
+            });
+        _taskSubscriptions[patientId] = subscription;
+      }
+    }
   }
 
   String _removeDiacritics(String str) {
@@ -455,11 +502,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
-              stream: _dbService.getPacientesStream(
-                centroId: session.centroId,
-                rol: session.rol,
-                uidCuidador: session.uid,
-              ),
+              stream: _pacientesStream,
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(
@@ -515,6 +558,20 @@ class _HomeScreenState extends State<HomeScreen> {
                 }
 
                 var docs = snapshot.data!.docs;
+
+                if (session.rol == 'cuidador') {
+                  final List<String> currentIds = docs.map((d) => d.id).toList();
+                  final bool listsAreEqual = _lastSyncedPatientIds != null &&
+                      _lastSyncedPatientIds!.length == currentIds.length &&
+                      _lastSyncedPatientIds!.every((id) => currentIds.contains(id));
+
+                  if (!listsAreEqual) {
+                    _lastSyncedPatientIds = currentIds;
+                  }
+                  
+                  // Actualizar reactivamente las suscripciones a las tareas de estos pacientes
+                  _updateTaskSubscriptions(session.uid, docs);
+                }
 
                 if (_searchQuery.isNotEmpty) {
                   String queryNormalized =
