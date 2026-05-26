@@ -155,6 +155,56 @@ class _HomeScreenState extends State<HomeScreen> {
     return AppTheme.blue;
   }
 
+  String _getDiaSemanaActual() {
+    final int weekday = DateTime.now().weekday;
+    switch (weekday) {
+      case DateTime.monday:
+        return 'lunes';
+      case DateTime.tuesday:
+        return 'martes';
+      case DateTime.wednesday:
+        return 'miercoles';
+      case DateTime.thursday:
+        return 'jueves';
+      case DateTime.friday:
+        return 'viernes';
+      case DateTime.saturday:
+        return 'sabado';
+      case DateTime.sunday:
+        return 'domingo';
+      default:
+        return 'lunes';
+    }
+  }
+
+  bool _isTaskScheduledForToday(Map<String, dynamic> data) {
+    final List<String> diasSemana = List<String>.from(data['diasSemana'] ?? []);
+    final String hoy = _getDiaSemanaActual();
+    
+    final normalizedDias = diasSemana.map((d) {
+      return d.trim().toLowerCase()
+          .replaceAll('á', 'a')
+          .replaceAll('é', 'e')
+          .replaceAll('í', 'i')
+          .replaceAll('ó', 'o')
+          .replaceAll('ú', 'u');
+    }).toList();
+
+    return normalizedDias.contains(hoy);
+  }
+
+  bool _isCompletedToday(Map<String, dynamic> data) {
+    final DateTime nowDt = DateTime.now();
+    final String fechaActual = '${nowDt.year}-${nowDt.month.toString().padLeft(2, '0')}-${nowDt.day.toString().padLeft(2, '0')}';
+    final completedDates = data['completedDates'];
+
+    if (completedDates is Map<String, dynamic>) {
+      return completedDates[fechaActual] == true;
+    }
+
+    return false;
+  }
+
   Widget _buildPatientTaskProgress(String patientId) {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
@@ -172,6 +222,9 @@ class _HomeScreenState extends State<HomeScreen> {
         for (final doc in snapshot.data!.docs) {
           final data = doc.data() as Map<String, dynamic>;
 
+          // Filtrar por día
+          if (!_isTaskScheduledForToday(data)) continue;
+
           final category = (data['category'] ??
                   data['categoria'] ??
                   data['tipo'] ??
@@ -188,10 +241,21 @@ class _HomeScreenState extends State<HomeScreen> {
 
           grouped[category]!['total'] = grouped[category]!['total']! + 1;
 
-          if (data['isCompleted'] == true) {
+          if (_isCompletedToday(data)) {
             grouped[category]!['completed'] =
                 grouped[category]!['completed']! + 1;
           }
+        }
+
+        if (grouped.isEmpty) {
+          return const Text(
+            'Sin tareas para hoy',
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.black45,
+              fontStyle: FontStyle.italic,
+            ),
+          );
         }
 
         return Wrap(
