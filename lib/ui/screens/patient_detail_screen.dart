@@ -33,12 +33,11 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
   @override
   void initState() {
     super.initState();
-    _caregiversStream = FirebaseFirestore.instance
-        .collection('usuarios')
-        .where('rol', isEqualTo: 'cuidador')
-        .snapshots();
+    final currentCentroId = SessionService().centroId;
+
+    _caregiversStream = _dbService.getCuidadoresStream(currentCentroId);
     _tasksStream = _dbService.getPatientTasksForTodayStream(widget.patientId);
-    _allCuidadoresStream = _dbService.getCuidadoresStream();
+    _allCuidadoresStream = _dbService.getCuidadoresStream(currentCentroId);
     _patientSnapshotStream = FirebaseFirestore.instance
         .collection('pacientes')
         .doc(widget.patientId)
@@ -164,7 +163,6 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
 
   String _formatTime(dynamic value) {
     final raw = value?.toString().trim() ?? '';
-
     if (raw.isEmpty) return '';
 
     final upper = raw.toUpperCase();
@@ -175,26 +173,21 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
       final hour = int.parse(match.group(1)!);
       final minute = match.group(2)!;
       final period = match.group(3)!;
-
       return '$hour:$minute $period';
     }
 
     final clean = raw.replaceAll(':', '').replaceAll(' ', '');
-
     if (clean.length == 4 && int.tryParse(clean) != null) {
       return '${clean.substring(0, 2)}:${clean.substring(2, 4)}';
     }
-
     if (clean.length == 3 && int.tryParse(clean) != null) {
       return '0${clean.substring(0, 1)}:${clean.substring(1, 3)}';
     }
-
     return raw;
   }
 
   int _timeToMinutes(dynamic value) {
     final raw = value?.toString().trim().toUpperCase() ?? '';
-
     if (raw.isEmpty) return 99999;
 
     final amPmRegex = RegExp(r'^(\d{1,2}):(\d{2})\s*(AM|PM)$');
@@ -210,24 +203,20 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
       } else {
         if (hour != 12) hour += 12;
       }
-
       return hour * 60 + minute;
     }
 
     final clean = raw.replaceAll(':', '').replaceAll(' ', '');
-
     if (clean.length == 4 && int.tryParse(clean) != null) {
       final hour = int.parse(clean.substring(0, 2));
       final minute = int.parse(clean.substring(2, 4));
       return hour * 60 + minute;
     }
-
     if (clean.length == 3 && int.tryParse(clean) != null) {
       final hour = int.parse(clean.substring(0, 1));
       final minute = int.parse(clean.substring(1, 3));
       return hour * 60 + minute;
     }
-
     return 99999;
   }
 
@@ -238,29 +227,20 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
     if (completedDates is Map<String, dynamic>) {
       return completedDates[fechaActual] == true;
     }
-
     return false;
   }
 
   String _getDiaSemanaActual() {
     final int weekday = DateTime.now().weekday;
     switch (weekday) {
-      case DateTime.monday:
-        return 'lunes';
-      case DateTime.tuesday:
-        return 'martes';
-      case DateTime.wednesday:
-        return 'miercoles';
-      case DateTime.thursday:
-        return 'jueves';
-      case DateTime.friday:
-        return 'viernes';
-      case DateTime.saturday:
-        return 'sabado';
-      case DateTime.sunday:
-        return 'domingo';
-      default:
-        return 'lunes';
+      case DateTime.monday: return 'lunes';
+      case DateTime.tuesday: return 'martes';
+      case DateTime.wednesday: return 'miercoles';
+      case DateTime.thursday: return 'jueves';
+      case DateTime.friday: return 'viernes';
+      case DateTime.saturday: return 'sabado';
+      case DateTime.sunday: return 'domingo';
+      default: return 'lunes';
     }
   }
 
@@ -287,81 +267,47 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
     if (completedByDates is Map<String, dynamic>) {
       return completedByDates[fechaActual]?.toString();
     }
-
     return null;
   }
 
   String _getCategory(Map<String, dynamic> data) {
-    final rawCategory = data['category'] ??
-        data['categoria'] ??
-        data['tipo'] ??
-        data['type'] ??
-        '';
-
+    final rawCategory = data['category'] ?? data['categoria'] ?? data['tipo'] ?? data['type'] ?? '';
     final category = rawCategory.toString().trim();
-
-    if (category.isEmpty) {
-      return 'Medicamentos';
-    }
-
+    if (category.isEmpty) return 'Medicamentos';
     return category;
   }
 
   IconData _getCategoryIcon(String category) {
     final lower = category.toLowerCase();
-
     if (lower.contains('medic')) return Icons.medication_rounded;
-
-    if (lower.contains('alimen') ||
-        lower.contains('comida') ||
-        lower.contains('desayuno') ||
-        lower.contains('almuerzo') ||
-        lower.contains('cena')) {
+    if (lower.contains('alimen') || lower.contains('comida') || lower.contains('desayuno') || lower.contains('almuerzo') || lower.contains('cena')) {
       return Icons.restaurant_rounded;
     }
-
-    if (lower.contains('higiene') ||
-        lower.contains('aseo') ||
-        lower.contains('baño')) {
+    if (lower.contains('higiene') || lower.contains('aseo') || lower.contains('baño')) {
       return Icons.bolt_rounded;
     }
-
     if (lower.contains('salida') || lower.contains('visita')) {
       return Icons.groups_rounded;
     }
-
     return Icons.checklist_rounded;
   }
 
   Color _getCategoryColor(String category) {
     final lower = category.toLowerCase();
-
     if (lower.contains('medic')) return const Color(0xFF7B1FA2);
-
-    if (lower.contains('alimen') ||
-        lower.contains('comida') ||
-        lower.contains('desayuno') ||
-        lower.contains('almuerzo') ||
-        lower.contains('cena')) {
+    if (lower.contains('alimen') || lower.contains('comida') || lower.contains('desayuno') || lower.contains('almuerzo') || lower.contains('cena')) {
       return const Color(0xFF00C853);
     }
-
-    if (lower.contains('higiene') ||
-        lower.contains('aseo') ||
-        lower.contains('baño')) {
+    if (lower.contains('higiene') || lower.contains('aseo') || lower.contains('baño')) {
       return const Color(0xFF2979FF);
     }
-
     if (lower.contains('salida') || lower.contains('visita')) {
       return const Color(0xFF00A86B);
     }
-
     return AppTheme.blue;
   }
 
-  Map<String, List<QueryDocumentSnapshot>> _groupTasksByCategory(
-    List<QueryDocumentSnapshot> docs,
-  ) {
+  Map<String, List<QueryDocumentSnapshot>> _groupTasksByCategory(List<QueryDocumentSnapshot> docs) {
     final Map<String, List<QueryDocumentSnapshot>> grouped = {};
 
     for (final doc in docs) {
@@ -379,11 +325,9 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
 
         final timeA = _timeToMinutes(dataA['time']);
         final timeB = _timeToMinutes(dataB['time']);
-
         return timeA.compareTo(timeB);
       });
     });
-
     return grouped;
   }
 
@@ -396,20 +340,8 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
     String selectedPeriod = 'AM';
     String selectedMeal = 'Almuerzo';
 
-    final List<String> categories = [
-      'Medicamentos',
-      'Alimentación',
-      'Higiene',
-      'Salidas / Visitas',
-    ];
-
-    final List<String> mealOptions = [
-      'Almuerzo',
-      'Colación',
-      'Once',
-      'Cena',
-    ];
-
+    final List<String> categories = ['Medicamentos', 'Alimentación', 'Higiene', 'Salidas / Visitas'];
+    final List<String> mealOptions = ['Almuerzo', 'Colación', 'Once', 'Cena'];
     final List<Map<String, String>> weekDays = [
       {'label': 'Lunes', 'value': 'lunes'},
       {'label': 'Martes', 'value': 'martes'},
@@ -420,25 +352,9 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
       {'label': 'Domingo', 'value': 'domingo'},
     ];
 
-    final Set<String> selectedDays = {
-      'lunes',
-      'martes',
-      'miercoles',
-      'jueves',
-      'viernes',
-      'sabado',
-      'domingo',
-    };
-
-    final List<String> hours = List.generate(
-      12,
-      (index) => '${index + 1}',
-    );
-
-    final List<String> minutes = List.generate(
-      60,
-      (index) => index.toString().padLeft(2, '0'),
-    );
+    final Set<String> selectedDays = {'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo'};
+    final List<String> hours = List.generate(12, (index) => '${index + 1}');
+    final List<String> minutes = List.generate(60, (index) => index.toString().padLeft(2, '0'));
 
     showModalBottomSheet(
       context: context,
@@ -448,16 +364,12 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
         return StatefulBuilder(
           builder: (context, setModalState) {
             return Padding(
-              padding: EdgeInsets.only(
-                bottom: MediaQuery.of(context).viewInsets.bottom,
-              ),
+              padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
               child: Container(
                 padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
                 decoration: const BoxDecoration(
                   color: Colors.white,
-                  borderRadius: BorderRadius.vertical(
-                    top: Radius.circular(28),
-                  ),
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
                 ),
                 child: SingleChildScrollView(
                   child: Column(
@@ -466,83 +378,42 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                     children: [
                       Center(
                         child: Container(
-                          width: 42,
-                          height: 5,
-                          decoration: BoxDecoration(
-                            color: Colors.grey.shade300,
-                            borderRadius: BorderRadius.circular(20),
-                          ),
+                          width: 42, height: 5,
+                          decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(20)),
                         ),
                       ),
                       const SizedBox(height: 20),
-
                       Row(
                         children: [
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Text(
-                                  'Agregar tarea',
-                                  style: TextStyle(
-                                    fontSize: 22,
-                                    fontWeight: FontWeight.w800,
-                                    color: Colors.black87,
-                                  ),
-                                ),
+                                const Text('Agregar tarea', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.black87)),
                                 const SizedBox(height: 4),
-                                Text(
-                                  widget.name,
-                                  style: const TextStyle(
-                                    fontSize: 14,
-                                    color: Colors.black54,
-                                  ),
-                                ),
+                                Text(widget.name, style: const TextStyle(fontSize: 14, color: Colors.black54)),
                               ],
                             ),
                           ),
-                          IconButton(
-                            onPressed: () => Navigator.pop(context),
-                            icon: const Icon(Icons.close),
-                          ),
+                          IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close)),
                         ],
                       ),
-
                       const SizedBox(height: 22),
-
-                      const Text(
-                        'Categoría',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          color: Colors.black87,
-                        ),
-                      ),
+                      const Text('Categoría', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.black87)),
                       const SizedBox(height: 8),
-
                       DropdownButtonFormField<String>(
                         value: selectedCategory,
                         decoration: InputDecoration(
-                          filled: true,
-                          fillColor: Colors.grey.shade100,
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 14,
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(16),
-                            borderSide: BorderSide.none,
-                          ),
+                          filled: true, fillColor: Colors.grey.shade100,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
                         ),
                         items: categories.map((category) {
                           return DropdownMenuItem(
                             value: category,
                             child: Row(
                               children: [
-                                Icon(
-                                  _getCategoryIcon(category),
-                                  size: 20,
-                                  color: _getCategoryColor(category),
-                                ),
+                                Icon(_getCategoryIcon(category), size: 20, color: _getCategoryColor(category)),
                                 const SizedBox(width: 10),
                                 Text(category),
                               ],
@@ -551,57 +422,27 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                         }).toList(),
                         onChanged: (value) {
                           if (value == null) return;
-
-                          setModalState(() {
-                            selectedCategory = value;
-                          });
+                          setModalState(() { selectedCategory = value; });
                         },
                       ),
-
                       const SizedBox(height: 18),
-
                       Text(
-                        selectedCategory == 'Medicamentos'
-                            ? 'Toma de medicamentos'
-                            : selectedCategory == 'Alimentación'
-                                ? 'Tipo de alimentación'
-                                : selectedCategory == 'Salidas / Visitas'
-                                    ? 'Nombre de la visita o lugar de salida'
-                                    : 'Nombre de la tarea',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w700,
-                          color: Colors.black87,
-                        ),
+                        selectedCategory == 'Medicamentos' ? 'Toma de medicamentos' : selectedCategory == 'Alimentación' ? 'Tipo de alimentación' : selectedCategory == 'Salidas / Visitas' ? 'Nombre de la visita o lugar de salida' : 'Nombre de la tarea',
+                        style: const TextStyle(fontWeight: FontWeight.w700, color: Colors.black87),
                       ),
                       const SizedBox(height: 8),
-
                       if (selectedCategory == 'Alimentación')
                         DropdownButtonFormField<String>(
                           value: selectedMeal,
                           decoration: InputDecoration(
-                            filled: true,
-                            fillColor: Colors.grey.shade100,
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 14,
-                            ),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(16),
-                              borderSide: BorderSide.none,
-                            ),
+                            filled: true, fillColor: Colors.grey.shade100,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
                           ),
-                          items: mealOptions.map((meal) {
-                            return DropdownMenuItem(
-                              value: meal,
-                              child: Text(meal),
-                            );
-                          }).toList(),
+                          items: mealOptions.map((meal) => DropdownMenuItem(value: meal, child: Text(meal))).toList(),
                           onChanged: (value) {
                             if (value == null) return;
-
-                            setModalState(() {
-                              selectedMeal = value;
-                            });
+                            setModalState(() { selectedMeal = value; });
                           },
                         )
                       else
@@ -609,269 +450,117 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                           controller: titleCtrl,
                           textCapitalization: TextCapitalization.sentences,
                           decoration: InputDecoration(
-                            hintText: selectedCategory == 'Medicamentos'
-                                ? 'Ej: Metformina 500mg'
-                                : selectedCategory == 'Higiene'
-                                    ? 'Ej: Baño'
-                                    : 'Ej: Visita familiar o lugar de salida',
-                            filled: true,
-                            fillColor: Colors.grey.shade100,
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 14,
-                            ),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(16),
-                              borderSide: BorderSide.none,
-                            ),
+                            hintText: selectedCategory == 'Medicamentos' ? 'Ej: Metformina 500mg' : selectedCategory == 'Higiene' ? 'Ej: Baño' : 'Ej: Visita familiar o lugar de salida',
+                            filled: true, fillColor: Colors.grey.shade100,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
                           ),
                         ),
-
                       const SizedBox(height: 18),
-
-                      const Text(
-                        'Horario',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          color: Colors.black87,
-                        ),
-                      ),
+                      const Text('Horario', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.black87)),
                       const SizedBox(height: 8),
-
                       Container(
                         padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          color: Colors.grey.shade100,
-                          borderRadius: BorderRadius.circular(18),
-                        ),
+                        decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(18)),
                         child: Row(
                           children: [
                             Expanded(
                               child: DropdownButtonFormField<String>(
                                 value: selectedHour,
-                                decoration: const InputDecoration(
-                                  labelText: 'Hora',
-                                  border: InputBorder.none,
-                                ),
-                                items: hours.map((hour) {
-                                  return DropdownMenuItem(
-                                    value: hour,
-                                    child: Text(hour),
-                                  );
-                                }).toList(),
+                                decoration: const InputDecoration(labelText: 'Hora', border: InputBorder.none),
+                                items: hours.map((hour) => DropdownMenuItem(value: hour, child: Text(hour))).toList(),
                                 onChanged: (value) {
                                   if (value == null) return;
-
-                                  setModalState(() {
-                                    selectedHour = value;
-                                  });
+                                  setModalState(() { selectedHour = value; });
                                 },
                               ),
                             ),
-
                             const SizedBox(width: 12),
-
                             Expanded(
                               child: DropdownButtonFormField<String>(
                                 value: selectedMinute,
-                                decoration: const InputDecoration(
-                                  labelText: 'Min',
-                                  border: InputBorder.none,
-                                ),
-                                items: minutes.map((minute) {
-                                  return DropdownMenuItem(
-                                    value: minute,
-                                    child: Text(minute),
-                                  );
-                                }).toList(),
+                                decoration: const InputDecoration(labelText: 'Min', border: InputBorder.none),
+                                items: minutes.map((minute) => DropdownMenuItem(value: minute, child: Text(minute))).toList(),
                                 onChanged: (value) {
                                   if (value == null) return;
-
-                                  setModalState(() {
-                                    selectedMinute = value;
-                                  });
+                                  setModalState(() { selectedMinute = value; });
                                 },
                               ),
                             ),
-
                             const SizedBox(width: 12),
-
                             Expanded(
                               child: DropdownButtonFormField<String>(
                                 value: selectedPeriod,
-                                decoration: const InputDecoration(
-                                  labelText: 'AM/PM',
-                                  border: InputBorder.none,
-                                ),
-                                items: const [
-                                  DropdownMenuItem(
-                                    value: 'AM',
-                                    child: Text('AM'),
-                                  ),
-                                  DropdownMenuItem(
-                                    value: 'PM',
-                                    child: Text('PM'),
-                                  ),
-                                ],
+                                decoration: const InputDecoration(labelText: 'AM/PM', border: InputBorder.none),
+                                items: const [DropdownMenuItem(value: 'AM', child: Text('AM')), DropdownMenuItem(value: 'PM', child: Text('PM'))],
                                 onChanged: (value) {
                                   if (value == null) return;
-
-                                  setModalState(() {
-                                    selectedPeriod = value;
-                                  });
+                                  setModalState(() { selectedPeriod = value; });
                                 },
                               ),
                             ),
                           ],
                         ),
                       ),
-
                       const SizedBox(height: 10),
-
-                      Text(
-                        'Horario seleccionado: $selectedHour:$selectedMinute $selectedPeriod',
-                        style: const TextStyle(
-                          fontSize: 13,
-                          color: Colors.black54,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-
+                      Text('Horario seleccionado: $selectedHour:$selectedMinute $selectedPeriod', style: const TextStyle(fontSize: 13, color: Colors.black54, fontWeight: FontWeight.w600)),
                       const SizedBox(height: 18),
-
-                      const Text(
-                        'Días de repetición',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          color: Colors.black87,
-                        ),
-                      ),
+                      const Text('Días de repetición', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.black87)),
                       const SizedBox(height: 8),
-
                       Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
+                        spacing: 8, runSpacing: 8,
                         children: weekDays.map((day) {
                           final label = day['label']!;
                           final value = day['value']!;
                           final isSelected = selectedDays.contains(value);
 
                           return FilterChip(
-                            label: Text(label),
-                            selected: isSelected,
-                            selectedColor:
-                                const Color(0xFF00C853).withOpacity(0.18),
+                            label: Text(label), selected: isSelected,
+                            selectedColor: const Color(0xFF00C853).withOpacity(0.18),
                             checkmarkColor: const Color(0xFF00C853),
-                            labelStyle: TextStyle(
-                              color: isSelected
-                                  ? const Color(0xFF00A86B)
-                                  : Colors.black54,
-                              fontWeight: FontWeight.w700,
-                            ),
-                            side: BorderSide(
-                              color: isSelected
-                                  ? const Color(0xFF00C853)
-                                  : Colors.grey.shade300,
-                            ),
+                            labelStyle: TextStyle(color: isSelected ? const Color(0xFF00A86B) : Colors.black54, fontWeight: FontWeight.w700),
+                            side: BorderSide(color: isSelected ? const Color(0xFF00C853) : Colors.grey.shade300),
                             onSelected: (selected) {
                               setModalState(() {
-                                if (selected) {
-                                  selectedDays.add(value);
-                                } else {
-                                  selectedDays.remove(value);
-                                }
+                                if (selected) { selectedDays.add(value); } else { selectedDays.remove(value); }
                               });
                             },
                           );
                         }).toList(),
                       ),
-
                       const SizedBox(height: 24),
-
                       SizedBox(
-                        width: double.infinity,
-                        height: 54,
+                        width: double.infinity, height: 54,
                         child: ElevatedButton.icon(
                           onPressed: () async {
-                            final title = selectedCategory == 'Alimentación'
-                                ? selectedMeal
-                                : titleCtrl.text.trim();
-
+                            final title = selectedCategory == 'Alimentación' ? selectedMeal : titleCtrl.text.trim();
                             if (title.isEmpty) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    selectedCategory == 'Medicamentos'
-                                        ? 'Completa el nombre del medicamento'
-                                        : selectedCategory == 'Salidas / Visitas'
-                                            ? 'Completa la visita o lugar de salida'
-                                            : 'Completa el nombre de la tarea',
-                                  ),
-                                ),
-                              );
+                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(selectedCategory == 'Medicamentos' ? 'Completa el nombre del medicamento' : selectedCategory == 'Salidas / Visitas' ? 'Completa la visita o lugar de salida' : 'Completa el nombre de la tarea')));
                               return;
                             }
-
                             if (selectedDays.isEmpty) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                    'Selecciona al menos un día de repetición',
-                                  ),
-                                  backgroundColor: Colors.redAccent,
-                                ),
-                              );
+                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Selecciona al menos un día de repetición'), backgroundColor: Colors.redAccent));
                               return;
                             }
 
-                            final formattedTime =
-                                '$selectedHour:$selectedMinute $selectedPeriod';
-
+                            final formattedTime = '$selectedHour:$selectedMinute $selectedPeriod';
                             final String taskId = await _dbService.addTask(
-  patientId: widget.patientId,
-  title: title,
-  time: formattedTime,
-  category: selectedCategory,
-  diasSemana: selectedDays.toList(),
-);
+                              patientId: widget.patientId, title: title, time: formattedTime, category: selectedCategory, diasSemana: selectedDays.toList(),
+                            );
 
-  if (!SessionService().isAdmin) {
-    await NotificationService.scheduleMedicationReminder(
-      taskId: taskId,
-      patientName: widget.name,
-      medicationName: title,
-      time: formattedTime,
-      diasSemana: selectedDays.toList(),
-      category: selectedCategory,
-    );
-  }
+                            if (!SessionService().isAdmin) {
+                              await NotificationService.scheduleMedicationReminder(
+                                taskId: taskId, patientName: widget.name, medicationName: title, time: formattedTime, diasSemana: selectedDays.toList(), category: selectedCategory,
+                              );
+                            }
 
                             if (!context.mounted) return;
-
                             Navigator.pop(context);
-
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Tarea agregada correctamente'),
-                                backgroundColor: Color(0xFF00C853),
-                              ),
-                            );
+                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Tarea agregada correctamente'), backgroundColor: Color(0xFF00C853)));
                           },
                           icon: const Icon(Icons.add, color: Colors.white),
-                          label: const Text(
-                            'Guardar tarea',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w800,
-                              fontSize: 16,
-                            ),
-                          ),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF00C853),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                          ),
+                          label: const Text('Guardar tarea', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 16)),
+                          style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF00C853), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
                         ),
                       ),
                     ],
@@ -895,45 +584,23 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
         child: Scaffold(
           backgroundColor: Colors.grey.shade100,
           appBar: AppBar(
-            backgroundColor: AppTheme.blue,
-            elevation: 0,
+            backgroundColor: AppTheme.blue, elevation: 0,
             iconTheme: const IconThemeData(color: Colors.white),
             title: Column(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Text(
-                  widget.name,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 18,
-                    color: Colors.white,
-                  ),
-                ),
-                Text(
-                  widget.details,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    color: Colors.white,
-                  ),
-                ),
+                Text(widget.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.white)),
+                Text(widget.details, style: const TextStyle(fontSize: 13, color: Colors.white)),
               ],
             ),
             bottom: const TabBar(
-              indicatorColor: Color(0xFF00C853),
-              indicatorWeight: 3,
-              labelColor: Colors.white,
-              unselectedLabelColor: Colors.white70,
-              tabs: [
-                Tab(text: 'Tareas'),
-                Tab(text: 'Asignación Semanal'),
-              ],
+              indicatorColor: Color(0xFF00C853), indicatorWeight: 3,
+              labelColor: Colors.white, unselectedLabelColor: Colors.white70,
+              tabs: [Tab(text: 'Tareas'), Tab(text: 'Asignación Semanal')],
             ),
           ),
           body: TabBarView(
-            children: [
-              _buildTasksTab(context, session),
-              _buildAssignmentsTab(context),
-            ],
+            children: [_buildTasksTab(context, session), _buildAssignmentsTab(context)],
           ),
         ),
       );
@@ -942,27 +609,13 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
     return Scaffold(
       backgroundColor: Colors.grey.shade100,
       appBar: AppBar(
-        backgroundColor: AppTheme.blue,
-        elevation: 0,
+        backgroundColor: AppTheme.blue, elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              widget.name,
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 18,
-                color: Colors.white,
-              ),
-            ),
-            Text(
-              widget.details,
-              style: const TextStyle(
-                fontSize: 13,
-                color: Colors.white,
-              ),
-            ),
+            Text(widget.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.white)),
+            Text(widget.details, style: const TextStyle(fontSize: 13, color: Colors.white)),
           ],
         ),
       ),
@@ -987,18 +640,11 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
           stream: _tasksStream,
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(
-                child: CircularProgressIndicator(color: AppTheme.blue),
-              );
+              return const Center(child: CircularProgressIndicator(color: AppTheme.blue));
             }
 
             if (snapshot.hasError) {
-              return const Center(
-                child: Text(
-                  'Error al cargar las tareas',
-                  style: TextStyle(color: Colors.redAccent),
-                ),
-              );
+              return const Center(child: Text('Error al cargar las tareas', style: TextStyle(color: Colors.redAccent)));
             }
 
             final docs = snapshot.data?.docs ?? [];
@@ -1007,68 +653,22 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
               return ListView(
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 90),
                 children: [
-                  const Text(
-                    'Tareas por categoría',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.black87,
-                    ),
-                  ),
+                  const Text('Tareas por categoría', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Colors.black87)),
                   const SizedBox(height: 6),
-                  const Text(
-                    'Registro diario de cuidados realizados al paciente.',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.black54,
-                    ),
-                  ),
+                  const Text('Registro diario de cuidados realizados al paciente.', style: TextStyle(fontSize: 14, color: Colors.black54)),
                   const SizedBox(height: 32),
                   Container(
                     padding: const EdgeInsets.all(24),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(22),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
-                          blurRadius: 12,
-                          offset: const Offset(0, 6),
-                        ),
-                      ],
-                    ),
+                    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(22), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 12, offset: const Offset(0, 6))]),
                     child: Column(
                       children: [
-                        Icon(
-                          Icons.checklist_rounded,
-                          size: 44,
-                          color: Colors.grey.shade400,
-                        ),
+                        Icon(Icons.checklist_rounded, size: 44, color: Colors.grey.shade400),
                         const SizedBox(height: 12),
-                        const Text(
-                          'No hay tareas para hoy',
-                          style: TextStyle(
-                            fontSize: 17,
-                            fontWeight: FontWeight.w800,
-                            color: Colors.black87,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        const Text(
-                          'Agregue tareas o revise los días de repetición configurados.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.black54,
-                          ),
-                        ),
+                        const Text('No hay tareas para hoy', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Colors.black87)),
                       ],
                     ),
                   ),
-                  if (session.rol != 'cuidador') ...[
-                    const SizedBox(height: 18),
-                    _buildAddTaskButton(),
-                  ],
+                  if (session.rol != 'cuidador') ...[const SizedBox(height: 18), _buildAddTaskButton()],
                 ],
               );
             }
@@ -1078,29 +678,14 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
             return ListView(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 90),
               children: [
-                const Text(
-                  'Tareas por categoría',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.black87,
-                  ),
-                ),
+                const Text('Tareas por categoría', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Colors.black87)),
                 const SizedBox(height: 6),
-                const Text(
-                  'Registro diario de cuidados realizados al paciente.',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.black54,
-                  ),
-                ),
+                const Text('Registro diario de cuidados realizados al paciente.', style: TextStyle(fontSize: 14, color: Colors.black54)),
                 const SizedBox(height: 18),
-
                 ...groupedTasks.entries.map((entry) {
                   final category = entry.key;
                   final allTasks = entry.value;
 
-                  // Filtrar las tareas que están programadas para hoy
                   final tasksToday = allTasks.where((doc) {
                     final data = doc.data() as Map<String, dynamic>;
                     return _isTaskScheduledForToday(data);
@@ -1112,19 +697,10 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                   }).length;
 
                   return _buildCategoryCard(
-                    category: category,
-                    completed: completed,
-                    total: tasksToday.length,
-                    tasks: tasksToday,
-                    caregiverMap: caregiverMap,
-                    session: session,
+                    category: category, completed: completed, total: tasksToday.length, tasks: tasksToday, caregiverMap: caregiverMap, session: session,
                   );
                 }).toList(),
-
-                if (session.rol != 'cuidador') ...[
-                  const SizedBox(height: 8),
-                  _buildAddTaskButton(),
-                ],
+                if (session.rol != 'cuidador') ...[const SizedBox(height: 8), _buildAddTaskButton()],
               ],
             );
           },
@@ -1135,25 +711,12 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
 
   Widget _buildAddTaskButton() {
     return SizedBox(
-      width: double.infinity,
-      height: 56,
+      width: double.infinity, height: 56,
       child: ElevatedButton.icon(
         onPressed: _showAddTaskDialog,
         icon: const Icon(Icons.add, color: Colors.white),
-        label: const Text(
-          'Añadir tarea',
-          style: TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.w800,
-            fontSize: 16,
-          ),
-        ),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFF00C853),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-        ),
+        label: const Text('Añadir tarea', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 16)),
+        style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF00C853), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
       ),
     );
   }
@@ -1170,78 +733,29 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
 
     return Container(
       margin: const EdgeInsets.only(bottom: 18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.06),
-            blurRadius: 14,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      ),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(22), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 14, offset: const Offset(0, 6))]),
       child: Column(
         children: [
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.08),
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(22),
-              ),
-            ),
+            decoration: BoxDecoration(color: color.withOpacity(0.08), borderRadius: const BorderRadius.vertical(top: Radius.circular(22))),
             child: Row(
               children: [
-                CircleAvatar(
-                  radius: 18,
-                  backgroundColor: color.withOpacity(0.15),
-                  child: Icon(
-                    _getCategoryIcon(category),
-                    color: color,
-                    size: 20,
-                  ),
-                ),
+                CircleAvatar(radius: 18, backgroundColor: color.withOpacity(0.15), child: Icon(_getCategoryIcon(category), color: color, size: 20)),
                 const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    category,
-                    style: const TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.black87,
-                    ),
-                  ),
-                ),
-                Text(
-                  '$completed/$total',
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.black87,
-                  ),
-                ),
+                Expanded(child: Text(category, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Colors.black87))),
+                Text('$completed/$total', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Colors.black87)),
               ],
             ),
           ),
-
           ...tasks.map((taskDoc) {
             final data = taskDoc.data() as Map<String, dynamic>;
-
             final isCompletedToday = _isCompletedToday(data);
             final completedByUid = _completedByToday(data);
-            final caregiverName = completedByUid != null
-                ? caregiverMap[completedByUid]
-                : null;
+            final caregiverName = completedByUid != null ? caregiverMap[completedByUid] : null;
 
             return _buildTaskRow(
-              taskId: taskDoc.id,
-              title: data['title'] ?? '',
-              time: _formatTime(data['time']),
-              isChecked: isCompletedToday,
-              isAdmin: session.isAdmin,
-              caregiverName: caregiverName,
-              color: color,
+              taskId: taskDoc.id, title: data['title'] ?? '', time: _formatTime(data['time']), isChecked: isCompletedToday, isAdmin: session.isAdmin, caregiverName: caregiverName, color: color,
             );
           }).toList(),
         ],
@@ -1259,16 +773,9 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
     required Color color,
   }) {
     final row = InkWell(
-      onTap: isAdmin
-          ? null
-          : () {
-              _dbService.updateTaskStatus(
-                widget.patientId,
-                taskId,
-                !isChecked,
-                SessionService().uid ?? 'UID_NO_ENCONTRADO',
-              );
-            },
+      onTap: isAdmin ? null : () {
+        _dbService.updateTaskStatus(widget.patientId, taskId, !isChecked, SessionService().uid);
+      },
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13),
         child: Row(
@@ -1276,67 +783,25 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
           children: [
             AnimatedContainer(
               duration: const Duration(milliseconds: 180),
-              width: 26,
-              height: 26,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: isChecked ? const Color(0xFF00C853) : Colors.white,
-                border: Border.all(
-                  color: isChecked
-                      ? const Color(0xFF00C853)
-                      : Colors.grey.shade300,
-                  width: 2,
-                ),
-              ),
-              child: isChecked
-                  ? const Icon(
-                      Icons.check,
-                      color: Colors.white,
-                      size: 18,
-                    )
-                  : null,
+              width: 26, height: 26,
+              decoration: BoxDecoration(shape: BoxShape.circle, color: isChecked ? const Color(0xFF00C853) : Colors.white, border: Border.all(color: isChecked ? const Color(0xFF00C853) : Colors.grey.shade300, width: 2)),
+              child: isChecked ? const Icon(Icons.check, color: Colors.white, size: 18) : null,
             ),
             const SizedBox(width: 14),
-
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    title.isEmpty ? 'Tarea sin nombre' : title,
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.black87,
-                      decoration: isChecked ? TextDecoration.lineThrough : null,
-                      decorationThickness: 2,
-                    ),
-                  ),
+                  Text(title.isEmpty ? 'Tarea sin nombre' : title, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.black87, decoration: isChecked ? TextDecoration.lineThrough : null, decorationThickness: 2)),
                   if (isChecked && caregiverName != null) ...[
                     const SizedBox(height: 4),
-                    Text(
-                      'Completado por: $caregiverName',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: AppTheme.blue,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
+                    Text('Completado por: $caregiverName', style: const TextStyle(fontSize: 12, color: AppTheme.blue, fontWeight: FontWeight.w700)),
                   ],
                 ],
               ),
             ),
-
             const SizedBox(width: 10),
-
-            Text(
-              time,
-              style: const TextStyle(
-                fontSize: 13,
-                color: Colors.black54,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
+            Text(time, style: const TextStyle(fontSize: 13, color: Colors.black54, fontWeight: FontWeight.w700)),
           ],
         ),
       ),
@@ -1347,96 +812,48 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
     return Dismissible(
       key: Key(taskId),
       direction: DismissDirection.endToStart,
-      background: Container(
-        color: Colors.redAccent,
-        alignment: Alignment.centerRight,
-        padding: const EdgeInsets.only(right: 20),
-        child: const Icon(
-          Icons.delete,
-          color: Colors.white,
-        ),
-      ),
+      background: Container(color: Colors.redAccent, alignment: Alignment.centerRight, padding: const EdgeInsets.only(right: 20), child: const Icon(Icons.delete, color: Colors.white)),
       confirmDismiss: (_) async {
         return await showDialog<bool>(
           context: context,
           builder: (context) => AlertDialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            title: const Text(
-              'Eliminar tarea',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: const Text('Eliminar tarea', style: TextStyle(fontWeight: FontWeight.bold)),
             content: Text('¿Deseas eliminar la tarea "$title"?'),
             actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text(
-                  'Cancelar',
-                  style: TextStyle(color: Colors.grey),
-                ),
-              ),
-              ElevatedButton(
-                onPressed: () => Navigator.pop(context, true),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.redAccent,
-                ),
-                child: const Text(
-                  'Eliminar',
-                  style: TextStyle(color: Colors.white),
-                ),
-              ),
+              TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar', style: TextStyle(color: Colors.grey))),
+              ElevatedButton(onPressed: () => Navigator.pop(context, true), style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent), child: const Text('Eliminar', style: TextStyle(color: Colors.white))),
             ],
           ),
         );
       },
-      onDismissed: (_) {
-        _dbService.deleteTask(widget.patientId, taskId);
-      },
+      onDismissed: (_) { _dbService.deleteTask(widget.patientId, taskId); },
       child: row,
     );
   }
 
   Widget _buildAssignmentsTab(BuildContext context) {
     final String adminCentroId = SessionService().centroId;
-    final List<String> dias = [
-      'Lunes',
-      'Martes',
-      'Miércoles',
-      'Jueves',
-      'Viernes',
-      'Sábado',
-      'Domingo',
-    ];
+    final List<String> dias = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 
     return StreamBuilder<QuerySnapshot>(
       stream: _allCuidadoresStream,
       builder: (context, caregiversSnapshot) {
         if (caregiversSnapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
-            child: CircularProgressIndicator(color: AppTheme.blue),
-          );
+          return const Center(child: CircularProgressIndicator(color: AppTheme.blue));
         }
 
         if (caregiversSnapshot.hasError) {
-          return const Center(
-            child: Text('Error al obtener la lista de cuidadores.'),
-          );
+          return const Center(child: Text('Error al obtener la lista de cuidadores.'));
         }
 
         Map<String, String> caregiverNames = {};
         List<QueryDocumentSnapshot> caregiversDocs = [];
 
         if (caregiversSnapshot.hasData) {
-          caregiversDocs = caregiversSnapshot.data!.docs.where((doc) {
-            final data = doc.data() as Map<String, dynamic>;
-            final String cId = data['centroId'] ?? data['centroID'] ?? '';
-            return cId == adminCentroId;
-          }).toList();
-
+          caregiversDocs = caregiversSnapshot.data!.docs;
           for (final doc in caregiversDocs) {
-            caregiverNames[doc.id] =
-                (doc.data() as Map<String, dynamic>)['nombre'] ?? 'Sin nombre';
+            caregiverNames[doc.id] = (doc.data() as Map<String, dynamic>)['nombre'] ?? 'Sin nombre';
           }
         }
 
@@ -1444,21 +861,15 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
           stream: _patientSnapshotStream,
           builder: (context, patientSnapshot) {
             if (patientSnapshot.connectionState == ConnectionState.waiting) {
-              return const Center(
-                child: CircularProgressIndicator(color: AppTheme.blue),
-              );
+              return const Center(child: CircularProgressIndicator(color: AppTheme.blue));
             }
 
             if (!patientSnapshot.hasData || !patientSnapshot.data!.exists) {
-              return const Center(
-                child: Text('No se pudo cargar la información del paciente.'),
-              );
+              return const Center(child: Text('No se pudo cargar la información del paciente.'));
             }
 
-            final patientData =
-                patientSnapshot.data!.data() as Map<String, dynamic>? ?? {};
-            final List<String> asignaciones =
-                List<String>.from(patientData['asignaciones'] ?? []);
+            final patientData = patientSnapshot.data!.data() as Map<String, dynamic>? ?? {};
+            final List<String> asignaciones = List<String>.from(patientData['asignaciones'] ?? []);
 
             return ListView.separated(
               padding: const EdgeInsets.all(20.0),
@@ -1475,47 +886,20 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                     .toList();
 
                 return Container(
-                  decoration: BoxDecoration(
-                    color: AppTheme.white,
-                    borderRadius: BorderRadius.circular(15),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.03),
-                        blurRadius: 8,
-                        offset: const Offset(0, 3),
-                      ),
-                    ],
-                  ),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16.0,
-                    vertical: 12.0,
-                  ),
+                  decoration: BoxDecoration(color: AppTheme.white, borderRadius: BorderRadius.circular(15), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 8, offset: const Offset(0, 3))]),
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text(
-                            dia,
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.black87,
-                            ),
-                          ),
+                          Text(dia, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87)),
                           IconButton(
-                            icon: const Icon(
-                              Icons.add_circle_outline,
-                              color: AppTheme.blue,
-                              size: 24,
-                            ),
+                            icon: const Icon(Icons.add_circle_outline, color: AppTheme.blue, size: 24),
                             onPressed: () {
                               _showAssignCaregiverDialog(
-                                context: context,
-                                dia: dia,
-                                alreadyAssignedUids: assignedUids,
-                                allCaregivers: caregiversDocs,
+                                context: context, dia: dia, alreadyAssignedUids: assignedUids, allCaregivers: caregiversDocs,
                               );
                             },
                           ),
@@ -1523,70 +907,27 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                       ),
                       const SizedBox(height: 8),
                       assignedUids.isEmpty
-                          ? const Text(
-                              'Sin cuidadores asignados',
-                              style: TextStyle(
-                                color: Colors.grey,
-                                fontSize: 13,
-                                fontStyle: FontStyle.italic,
-                              ),
-                            )
+                          ? const Text('Sin cuidadores asignados', style: TextStyle(color: Colors.grey, fontSize: 13, fontStyle: FontStyle.italic))
                           : Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
+                              spacing: 8, runSpacing: 8,
                               children: assignedUids.map((uid) {
-                                final String nombreCuidador =
-                                    caregiverNames[uid] ?? 'Cargando...';
+                                final String nombreCuidador = caregiverNames[uid] ?? 'Cargando...';
 
                                 return Chip(
-                                  backgroundColor:
-                                      AppTheme.blue.withOpacity(0.08),
-                                  side: BorderSide.none,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  label: Text(
-                                    nombreCuidador,
-                                    style: const TextStyle(
-                                      color: AppTheme.blue,
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 13,
-                                    ),
-                                  ),
-                                  deleteIcon: const Icon(
-                                    Icons.cancel,
-                                    size: 18,
-                                    color: Colors.redAccent,
-                                  ),
+                                  backgroundColor: AppTheme.blue.withOpacity(0.08), side: BorderSide.none,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  label: Text(nombreCuidador, style: const TextStyle(color: AppTheme.blue, fontWeight: FontWeight.w600, fontSize: 13)),
+                                  deleteIcon: const Icon(Icons.cancel, size: 18, color: Colors.redAccent),
                                   onDeleted: () async {
                                     try {
-                                      await _dbService
-                                          .desasignarCuidadorDePaciente(
-                                        pacienteId: widget.patientId,
-                                        cuidadorId: uid,
-                                        diaSemana: normalizedDia,
+                                      await _dbService.desasignarCuidadorDePaciente(
+                                        pacienteId: widget.patientId, cuidadorId: uid, diaSemana: normalizedDia,
                                       );
-
                                       if (!context.mounted) return;
-
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
-                                        SnackBar(
-                                          content: Text(
-                                            'Se quitó a $nombreCuidador de la asignación del $dia',
-                                          ),
-                                        ),
-                                      );
+                                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Se quitó a $nombreCuidador de la asignación del $dia')));
                                     } catch (e) {
                                       if (!context.mounted) return;
-
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
-                                        SnackBar(
-                                          content: Text('Error: $e'),
-                                          backgroundColor: Colors.red,
-                                        ),
-                                      );
+                                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red));
                                     }
                                   },
                                 );

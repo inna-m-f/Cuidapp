@@ -106,14 +106,14 @@ class DatabaseService {
     });
   }
 
-  Stream<QuerySnapshot> getCuidadoresStream() {
+  Stream<QuerySnapshot> getCuidadoresStream(String centroId) {
     return _db
         .collection('usuarios')
         .where('rol', isEqualTo: 'cuidador')
+        .where('centros', arrayContains: centroId)
         .snapshots();
   }
 
-  // Modificado para recibir email real y guardarlo en la ficha del usuario
   Future<void> registrarCuidador({
     required String rut,
     required String nombre,

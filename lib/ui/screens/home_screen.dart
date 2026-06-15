@@ -35,7 +35,6 @@ class _HomeScreenState extends State<HomeScreen> {
     });
 
     final session = SessionService();
-    // CRÍTICO: Usar activeRole para que el filtro cambie dinámicamente si el admin se pasa a cuidador
     _pacientesStream = _dbService.getPacientesStream(
       centroId: session.centroId,
       rol: session.activeRole, 
@@ -323,7 +322,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // --- NUEVO: Menú Lateral (Drawer) para ocultar configuración y cierre de sesión ---
   Widget _buildDrawer(BuildContext context, SessionService session) {
     return Drawer(
       child: Column(
@@ -345,7 +343,7 @@ class _HomeScreenState extends State<HomeScreen> {
               leading: const Icon(Icons.people_alt_outlined, color: Colors.black87),
               title: const Text('Gestionar Cuidadores'),
               onTap: () {
-                Navigator.pop(context); // Cierra el drawer
+                Navigator.pop(context);
                 Navigator.push(context, MaterialPageRoute(builder: (context) => const AdminCuidadoresScreen()));
               },
             ),
@@ -357,22 +355,46 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               title: Text(session.activeRole == 'admin' ? 'Cambiar a vista Cuidador' : 'Volver a vista Admin'),
               subtitle: Text(
-                session.activeRole == 'admin' 
-                  ? 'Verás la app como un trabajador' 
-                  : 'Recuperar controles de edición',
+                session.activeRole == 'admin' ? 'Verás la app como un trabajador' : 'Recuperar controles de edición',
                 style: const TextStyle(fontSize: 12),
               ),
               onTap: () async {
-                Navigator.pop(context); // Cierra el drawer
+                Navigator.pop(context);
                 String newRole = session.activeRole == 'admin' ? 'cuidador' : 'admin';
                 await session.setActiveRole(newRole);
                 
                 if (!context.mounted) return;
-                // Recargamos la pantalla completa para que _pacientesStream se reconstruya con el nuevo rol
                 Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const HomeScreen()));
               },
             ),
           ],
+          
+          if (session.centros.length > 1) ...[
+            const Divider(),
+            const Padding(
+              padding: EdgeInsets.only(left: 16.0, top: 10, bottom: 5),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Centros Disponibles',
+                  style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey, fontSize: 12),
+                ),
+              ),
+            ),
+            ...session.centros.map((cId) {
+              return CenterListTile(
+                centroId: cId,
+                activeCentroId: session.centroId,
+                onTap: () async {
+                  await session.setActiveCentro(cId);
+                  if (!context.mounted) return;
+                  Navigator.pop(context);
+                  Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const HomeScreen()));
+                },
+              );
+            }).toList(),
+          ],
+          
           const Spacer(),
           const Divider(),
           ListTile(
@@ -400,14 +422,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       backgroundColor: Colors.grey.shade100,
-      drawer: _buildDrawer(context, session), // Inyectamos el Drawer aquí
+      drawer: _buildDrawer(context, session),
       appBar: AppBar(
         title: const Text(
           'Pacientes del Centro',
           style: TextStyle(fontWeight: FontWeight.bold, color: AppTheme.white),
         ),
-        iconTheme: const IconThemeData(color: Colors.white), // Color del ícono de hamburguesa
-        // actions: [], <- Eliminamos los íconos visibles del AppBar
+        iconTheme: const IconThemeData(color: Colors.white),
       ),
       floatingActionButton: session.isAdmin
           ? FloatingActionButton.extended(
@@ -479,7 +500,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
                 var docs = snapshot.data!.docs;
 
-                // Solo actualizar suscripciones a tareas si estamos operando en vista cuidador
                 if (session.activeRole == 'cuidador') {
                   final List<String> currentIds = docs.map((d) => d.id).toList();
                   final bool listsAreEqual = _lastSyncedPatientIds != null &&
@@ -592,7 +612,6 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
 
-    // Solo habilitar el deslizar para eliminar si el activeRole es admin
     if (!session.isAdmin) return card;
 
     return Dismissible(
@@ -656,6 +675,51 @@ class _HomeScreenState extends State<HomeScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(color: bgColor, borderRadius: BorderRadius.circular(12)),
       child: Text(status, style: TextStyle(color: textColor, fontWeight: FontWeight.bold, fontSize: 12)),
+    );
+  }
+}
+
+class CenterListTile extends StatelessWidget {
+  final String centroId;
+  final String activeCentroId;
+  final VoidCallback onTap;
+
+  const CenterListTile({
+    Key? key,
+    required this.centroId,
+    required this.activeCentroId,
+    required this.onTap,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    final isSelected = centroId == activeCentroId;
+    return FutureBuilder<DocumentSnapshot>(
+      future: FirebaseFirestore.instance.collection('centros').doc(centroId).get(),
+      builder: (context, snapshot) {
+        String nombreCentro = centroId;
+        if (snapshot.hasData && snapshot.data!.exists) {
+          final data = snapshot.data!.data() as Map<String, dynamic>?;
+          nombreCentro = data?['nombre'] ?? centroId;
+        }
+        return ListTile(
+          leading: Icon(
+            Icons.business_rounded,
+            color: isSelected ? AppTheme.green : Colors.black87,
+          ),
+          title: Text(
+            nombreCentro,
+            style: TextStyle(
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+              color: isSelected ? AppTheme.green : Colors.black87,
+            ),
+          ),
+          trailing: isSelected 
+              ? const Icon(Icons.check_circle_rounded, color: AppTheme.green, size: 20)
+              : null,
+          onTap: onTap,
+        );
+      },
     );
   }
 }

@@ -20,7 +20,8 @@ class _AdminCuidadoresScreenState extends State<AdminCuidadoresScreen> {
   @override
   void initState() {
     super.initState();
-    _cuidadoresStream = _dbService.getCuidadoresStream();
+    // MODIFICADO: Pasa el centroId activo para cargar solo los cuidadores de este entorno
+    _cuidadoresStream = _dbService.getCuidadoresStream(SessionService().centroId);
   }
 
   String _formatRutToShow(String rut) {
