@@ -4,7 +4,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'home_screen.dart';
 import '../../core/theme.dart';
-import '../../core/rut_formatter.dart';
 import '../../services/auth_service.dart';
 import '../../services/session_service.dart';
 
@@ -16,28 +15,27 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  // Controladores y estado
-  final TextEditingController _rutController = TextEditingController();
-  final TextEditingController _centroController = TextEditingController(); 
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController(); 
   final AuthService _authService = AuthService();
   bool _isLoading = false;
 
   @override
   void initState() {
     super.initState();
-    _loadLastLoggedRut();
+    _loadLastLoggedEmail();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkAutoLogin();
     });
   }
 
-  Future<void> _loadLastLoggedRut() async {
+  Future<void> _loadLastLoggedEmail() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final lastRut = prefs.getString('last_logged_rut');
-      if (lastRut != null && lastRut.isNotEmpty) {
+      final lastEmail = prefs.getString('last_logged_email');
+      if (lastEmail != null && lastEmail.isNotEmpty) {
         setState(() {
-          _rutController.text = RutFormatter.formatString(lastRut);
+          _emailController.text = lastEmail;
         });
       }
     } catch (_) {}
@@ -61,18 +59,31 @@ class _LoginScreenState extends State<LoginScreen> {
         final doc = await FirebaseFirestore.instance.collection('usuarios').doc(user.uid).get();
         if (doc.exists) {
           final data = doc.data() as Map<String, dynamic>;
-          await SessionService().initialize(
-            uid: user.uid,
-            nombre: data['nombre'] ?? data['name'] ?? '',
-            rut: data['rut'] ?? '',
-            rol: data['rol'] ?? '',
-            centroId: data['centroId'] ?? data['centroID'] ?? '',
-          );
-          if (!mounted) return;
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (context) => const HomeScreen()),
-          );
+          
+          List<String> centros = [];
+          if (data.containsKey('centros')) {
+            centros = List<String>.from(data['centros']);
+          } else if (data.containsKey('centroId')) {
+            centros = [data['centroId']];
+          }
+
+          if (centros.isNotEmpty) {
+            await SessionService().initialize(
+              uid: user.uid,
+              nombre: data['nombre'] ?? data['name'] ?? '',
+              rut: data['rut'] ?? '',
+              rol: data['rol'] ?? '',
+              centroId: centros.first,
+              centros: centros,
+            );
+            if (!mounted) return;
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (context) => const HomeScreen()),
+            );
+          } else {
+            await _authService.signOut();
+          }
         } else {
           await _authService.signOut();
         }
@@ -85,8 +96,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _handleLogin() async {
-    // Evitar campos vacíos
-    if (_rutController.text.trim().isEmpty || _centroController.text.trim().isEmpty) {
+    if (_emailController.text.trim().isEmpty || _passwordController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Por favor, completa todos los campos', style: TextStyle(color: Colors.white)), backgroundColor: Colors.red),
       );
@@ -97,15 +107,18 @@ class _LoginScreenState extends State<LoginScreen> {
     FocusScope.of(context).unfocus(); 
 
     try {
-      await _authService.signIn(_rutController.text.trim(), _centroController.text.trim());
+      await _authService.signIn(_emailController.text.trim(), _passwordController.text.trim());
       
-      
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('last_logged_email', _emailController.text.trim());
+      } catch (_) {}
+
       if (!mounted) return;
       
-      // Si todo sale bien, navegamos al Home
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (context) => HomeScreen()),
+        MaterialPageRoute(builder: (context) => const HomeScreen()),
       );
     } catch (error) {
       if (!mounted) return;
@@ -122,8 +135,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   void dispose() {
-    _rutController.dispose();
-    _centroController.dispose();
+    _emailController.dispose();
+    _passwordController.dispose();
     super.dispose();
   }
 
@@ -149,7 +162,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  const Text('CuidApp', style: TextStyle(fontSize: 42, fontWeight: FontWeight.bold, color: AppTheme.white)),
+                  const Text('CuidaFlow', style: TextStyle(fontSize: 42, fontWeight: FontWeight.bold, color: AppTheme.white)),
                   const SizedBox(height: 10),
                   const Text('Gestión de cuidado de adultos\nmayores', textAlign: TextAlign.center, style: TextStyle(fontSize: 16, color: AppTheme.white, height: 1.3)),
                 ],
@@ -167,24 +180,22 @@ class _LoginScreenState extends State<LoginScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('RUT', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.black87)),
+                      const Text('Correo Electrónico', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.black87)),
                       const SizedBox(height: 10),
                       TextField(
-                        controller: _rutController, // <-- Asignamos controlador
-                        keyboardType: TextInputType.text,
-                        inputFormatters: [RutFormatter()],
-                        decoration: const InputDecoration(hintText: '12.345.678-9', hintStyle: TextStyle(color: Colors.black38)),
+                        controller: _emailController,
+                        keyboardType: TextInputType.emailAddress,
+                        decoration: const InputDecoration(hintText: 'ejemplo@correo.com', hintStyle: TextStyle(color: Colors.black38)),
                       ),
                       const SizedBox(height: 25),
-                      const Text('Nombre del centro (Contraseña)', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.black87)),
+                      const Text('Contraseña', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.black87)),
                       const SizedBox(height: 10),
                       TextField(
-                        controller: _centroController, 
+                        controller: _passwordController,
                         obscureText: true, 
-                        decoration: const InputDecoration(hintText: 'Centro de cuidado', hintStyle: TextStyle(color: Colors.black38)),
+                        decoration: const InputDecoration(hintText: 'Ingresa tu contraseña', hintStyle: TextStyle(color: Colors.black38)),
                       ),
                       const SizedBox(height: 40),
-                      
                       SizedBox(
                         width: double.infinity,
                         height: 55, 

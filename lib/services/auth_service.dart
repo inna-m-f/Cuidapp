@@ -7,14 +7,11 @@ class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
-  Future<UserCredential?> signIn(String rut, String password) async {
+  Future<Map<String, dynamic>> signIn(String email, String password) async {
     try {
-      String cleanRut = rut.replaceAll('.', '').replaceAll('-', '').trim();
-      String email = '$cleanRut@cuidapp.com';
-
-      // 1. Iniciar sesión en Firebase Auth
+      // 1. Iniciar sesión con email real y contraseña individual
       UserCredential userCredential = await _auth.signInWithEmailAndPassword(
-        email: email,
+        email: email.trim(),
         password: password,
       );
 
@@ -23,26 +20,39 @@ class AuthService {
       // 2. Obtener el perfil del usuario de Firestore
       DocumentSnapshot userDoc = await _db.collection('usuarios').doc(uid).get();
       if (!userDoc.exists) {
-        // Si no existe el perfil en la base de datos, cerrar sesión automáticamente
         await signOut();
-        throw 'Usuario no registrado en la base de datos de este centro.';
+        throw 'Usuario no registrado en la base de datos.';
       }
 
       Map<String, dynamic> data = userDoc.data() as Map<String, dynamic>;
 
-      // 3. Inicializar el SessionService con la información obtenida
+      // 3. Procesar multicentro y retrocompatibilidad
+      List<String> centros = [];
+      if (data.containsKey('centros')) {
+        centros = List<String>.from(data['centros']);
+      } else if (data.containsKey('centroId')) {
+        centros = [data['centroId']];
+      }
+
+      if (centros.isEmpty) {
+        await signOut();
+        throw 'No tienes centros asignados.';
+      }
+
+      // 4. Inicializar el SessionService con la información obtenida
       await SessionService().initialize(
         uid: uid,
         nombre: data['nombre'] ?? data['name'] ?? '',
         rut: data['rut'] ?? '',
         rol: data['rol'] ?? '',
-        centroId: data['centroId'] ?? data['centroID'] ?? '',
+        centroId: centros.first,
+        centros: centros,
       );
 
-      return userCredential;
+      return data;
     } on FirebaseAuthException catch (e) {
       if (e.code == 'user-not-found' || e.code == 'wrong-password' || e.code == 'invalid-credential') {
-        throw 'Credenciales incorrectas. Verifica tu RUT y Centro.';
+        throw 'Credenciales incorrectas. Verifica tu correo y contraseña.';
       }
       throw e.message ?? 'Error de autenticación de Firebase.';
     } catch (e) {
@@ -51,7 +61,6 @@ class AuthService {
     }
   }
 
-  // Cerrar sesión
   Future<void> signOut() async {
     await NotificationService.cancelAllReminders();
     await _auth.signOut();

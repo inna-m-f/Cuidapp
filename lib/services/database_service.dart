@@ -7,7 +7,6 @@ import 'notification_service.dart';
 class DatabaseService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
-  // 1. Obtener la lista de pacientes filtrada por Centro y Rol
   Stream<QuerySnapshot> getPacientesStream({
     required String centroId,
     required String rol,
@@ -15,13 +14,11 @@ class DatabaseService {
     String? diaSemana,
   }) {
     if (rol == 'admin') {
-      // El administrador ve todos los pacientes del centro
       return _db
           .collection('pacientes')
           .where('centroId', isEqualTo: centroId)
           .snapshots(includeMetadataChanges: true);
     } else {
-      // El cuidador ve únicamente los pacientes que tiene asignados hoy en su centro
       final String dia = diaSemana ?? _getDiaSemanaActual();
       final String queryFiltro = '${dia}_$uidCuidador';
 
@@ -33,11 +30,9 @@ class DatabaseService {
     }
   }
 
-  // Método auxiliar para obtener el día de la semana actual en español sin acentos
   String _getDiaSemanaActual() {
     final String dia =
         DateFormat('EEEE', 'es_ES').format(DateTime.now()).toLowerCase();
-
     return dia
         .replaceAll('miércoles', 'miercoles')
         .replaceAll('sábado', 'sabado');
@@ -47,18 +42,14 @@ class DatabaseService {
     return _getDiaSemanaActual();
   }
 
-  // Fecha actual para registrar cumplimiento diario
   String getFechaActualKey() {
     final DateTime now = DateTime.now();
-
     final String year = now.year.toString();
     final String month = now.month.toString().padLeft(2, '0');
     final String day = now.day.toString().padLeft(2, '0');
-
     return '$year-$month-$day';
   }
 
-  // 2. Agregar un Paciente nuevo (Exclusivo Admin)
   Future<void> addPaciente({
     required String centroId,
     required String name,
@@ -77,7 +68,6 @@ class DatabaseService {
     });
   }
 
-  // 3. Eliminar un Paciente y limpiar sus tareas en un lote transaccional (Exclusivo Admin)
   Future<void> deletePaciente(String pacienteId) async {
     final QuerySnapshot tasks = await _db
         .collection('pacientes')
@@ -90,33 +80,27 @@ class DatabaseService {
     for (final doc in tasks.docs) {
       batch.delete(doc.reference);
     }
-
     batch.delete(_db.collection('pacientes').doc(pacienteId));
-
     await batch.commit();
   }
 
-  // 4. Asignar cuidador a un paciente para un día de la semana (Exclusivo Admin)
   Future<void> asignarCuidadorAPaciente({
     required String pacienteId,
     required String diaSemana,
     required String cuidadorId,
   }) async {
     final String asignacion = '${diaSemana.toLowerCase()}_$cuidadorId';
-
     await _db.collection('pacientes').doc(pacienteId).update({
       'asignaciones': FieldValue.arrayUnion([asignacion]),
     });
   }
 
-  // 5. Quitar la asignación de un cuidador para un día de la semana (Exclusivo Admin)
   Future<void> desasignarCuidadorDePaciente({
     required String pacienteId,
     required String diaSemana,
     required String cuidadorId,
   }) async {
     final String asignacion = '${diaSemana.toLowerCase()}_$cuidadorId';
-
     await _db.collection('pacientes').doc(pacienteId).update({
       'asignaciones': FieldValue.arrayRemove([asignacion]),
     });
@@ -129,15 +113,15 @@ class DatabaseService {
         .snapshots();
   }
 
-  // 7. Registrar a un nuevo cuidador en Auth y Firestore (Exclusivo Admin)
+  // Modificado para recibir email real y guardarlo en la ficha del usuario
   Future<void> registrarCuidador({
     required String rut,
     required String nombre,
     required String centroId,
-    required String contrasenaCentro,
+    required String email,
+    required String password,
   }) async {
     final String cleanRut = rut.replaceAll('.', '').replaceAll('-', '').trim();
-    final String email = '$cleanRut@cuidapp.com';
 
     final FirebaseApp tempApp = await Firebase.initializeApp(
       name: 'TempRegisterApp',
@@ -146,11 +130,10 @@ class DatabaseService {
 
     try {
       final FirebaseAuth tempAuth = FirebaseAuth.instanceFor(app: tempApp);
-
       final UserCredential credential =
           await tempAuth.createUserWithEmailAndPassword(
-        email: email,
-        password: contrasenaCentro,
+        email: email.trim(),
+        password: password,
       );
 
       final String uidNuevoCuidador = credential.user!.uid;
@@ -158,8 +141,10 @@ class DatabaseService {
       await _db.collection('usuarios').doc(uidNuevoCuidador).set({
         'rut': cleanRut,
         'nombre': nombre,
+        'email': email.trim(),
         'rol': 'cuidador',
-        'centroId': centroId,
+        'centros': [centroId], 
+        'centroId': centroId, 
         'fechaCreacion': FieldValue.serverTimestamp(),
       });
 
@@ -169,7 +154,6 @@ class DatabaseService {
     }
   }
 
-  // 8. Todas las tareas del paciente
   Stream<QuerySnapshot> getPatientTasksStream(String patientId) {
     return _db
         .collection('pacientes')
@@ -178,10 +162,8 @@ class DatabaseService {
         .snapshots();
   }
 
-  // 9. Tareas del paciente solo para el día actual
   Stream<QuerySnapshot> getPatientTasksForTodayStream(String patientId) {
     final String diaActual = _getDiaSemanaActual();
-
     return _db
         .collection('pacientes')
         .doc(patientId)
@@ -190,7 +172,6 @@ class DatabaseService {
         .snapshots();
   }
 
-  // 10. Actualización de tarea con trazabilidad diaria
   Future<void> updateTaskStatus(
     String patientId,
     String taskId,
@@ -198,19 +179,15 @@ class DatabaseService {
     String uid,
   ) async {
     final String fechaActual = getFechaActualKey();
-
     await _db
         .collection('pacientes')
         .doc(patientId)
         .collection('tareas')
         .doc(taskId)
         .update({
-      // Se mantiene compatibilidad con la lógica antigua
       'isCompleted': isCompleted,
       'completedBy': isCompleted ? uid : null,
       'completedAt': isCompleted ? FieldValue.serverTimestamp() : null,
-
-      // Nueva lógica diaria
       'completedDates.$fechaActual': isCompleted,
       'completedByDates.$fechaActual': isCompleted ? uid : null,
       'completedAtDates.$fechaActual':
@@ -218,63 +195,61 @@ class DatabaseService {
     });
   }
 
-  // 11. Agregar tarea con repetición semanal
-Future<String> addTask({
-  required String patientId,
-  required String title,
-  required String time,
-  required String category,
-  required List<String> diasSemana,
-}) async {
-  final DocumentReference docRef = await _db
-      .collection('pacientes')
-      .doc(patientId)
-      .collection('tareas')
-      .add({
-    'title': title.trim(),
-    'time': time.trim(),
-    'category': category.trim(),
-    'diasSemana': diasSemana,
-    'isCompleted': false,
-    'completedBy': null,
-    'completedAt': null,
-    'completedDates': {},
-    'completedByDates': {},
-    'completedAtDates': {},
-    'fechaCreacion': FieldValue.serverTimestamp(),
-  });
-
-  return docRef.id;
-}
-Future<void> deleteTask(String patientId, String taskId) async {
-  final DocumentSnapshot doc = await _db
-      .collection('pacientes')
-      .doc(patientId)
-      .collection('tareas')
-      .doc(taskId)
-      .get();
-
-  final Map<String, dynamic>? data =
-      doc.data() as Map<String, dynamic>?;
-
-  if (data != null) {
-    final String category = (data['category'] ?? '').toString();
-    final List<String> diasSemana =
-        List<String>.from(data['diasSemana'] ?? []);
-
-    if (category == 'Medicamentos') {
-      await NotificationService.cancelMedicationReminder(
-        taskId: taskId,
-        diasSemana: diasSemana,
-      );
-    }
+  Future<String> addTask({
+    required String patientId,
+    required String title,
+    required String time,
+    required String category,
+    required List<String> diasSemana,
+  }) async {
+    final DocumentReference docRef = await _db
+        .collection('pacientes')
+        .doc(patientId)
+        .collection('tareas')
+        .add({
+      'title': title.trim(),
+      'time': time.trim(),
+      'category': category.trim(),
+      'diasSemana': diasSemana,
+      'isCompleted': false,
+      'completedBy': null,
+      'completedAt': null,
+      'completedDates': {},
+      'completedByDates': {},
+      'completedAtDates': {},
+      'fechaCreacion': FieldValue.serverTimestamp(),
+    });
+    return docRef.id;
   }
 
-  await _db
-      .collection('pacientes')
-      .doc(patientId)
-      .collection('tareas')
-      .doc(taskId)
-      .delete();
+  Future<void> deleteTask(String patientId, String taskId) async {
+    final DocumentSnapshot doc = await _db
+        .collection('pacientes')
+        .doc(patientId)
+        .collection('tareas')
+        .doc(taskId)
+        .get();
+
+    final Map<String, dynamic>? data = doc.data() as Map<String, dynamic>?;
+
+    if (data != null) {
+      final String category = (data['category'] ?? '').toString();
+      final List<String> diasSemana =
+          List<String>.from(data['diasSemana'] ?? []);
+
+      if (category == 'Medicamentos') {
+        await NotificationService.cancelMedicationReminder(
+          taskId: taskId,
+          diasSemana: diasSemana,
+        );
+      }
+    }
+
+    await _db
+        .collection('pacientes')
+        .doc(patientId)
+        .collection('tareas')
+        .doc(taskId)
+        .delete();
   }
 }

@@ -23,7 +23,6 @@ class _AdminCuidadoresScreenState extends State<AdminCuidadoresScreen> {
     _cuidadoresStream = _dbService.getCuidadoresStream();
   }
 
-  // Formatear el RUT para mostrarlo con puntos y guion en la lista
   String _formatRutToShow(String rut) {
     if (rut.length < 2) return rut;
     String clean = rut.replaceAll('.', '').replaceAll('-', '').trim();
@@ -48,6 +47,8 @@ class _AdminCuidadoresScreenState extends State<AdminCuidadoresScreen> {
   void _showAddCaregiverDialog(BuildContext context) {
     final TextEditingController nameCtrl = TextEditingController();
     final TextEditingController rutCtrl = TextEditingController();
+    final TextEditingController emailCtrl = TextEditingController();
+    final TextEditingController passwordCtrl = TextEditingController();
 
     showDialog(
       context: context,
@@ -85,6 +86,26 @@ class _AdminCuidadoresScreenState extends State<AdminCuidadoresScreen> {
                         hintText: 'Ej: 12.345.678-K',
                       ),
                     ),
+                    const SizedBox(height: 15),
+                    TextField(
+                      controller: emailCtrl,
+                      keyboardType: TextInputType.emailAddress,
+                      enabled: !_isSaving,
+                      decoration: const InputDecoration(
+                        labelText: 'Correo Electrónico',
+                        hintText: 'Ej: juan@correo.com',
+                      ),
+                    ),
+                    const SizedBox(height: 15),
+                    TextField(
+                      controller: passwordCtrl,
+                      obscureText: true,
+                      enabled: !_isSaving,
+                      decoration: const InputDecoration(
+                        labelText: 'Contraseña de Acceso',
+                        hintText: 'Mínimo 6 caracteres',
+                      ),
+                    ),
                     if (_isSaving) ...[
                       const SizedBox(height: 20),
                       const CircularProgressIndicator(color: AppTheme.blue),
@@ -103,10 +124,19 @@ class _AdminCuidadoresScreenState extends State<AdminCuidadoresScreen> {
                         onPressed: () async {
                           final nombre = nameCtrl.text.trim();
                           final rut = rutCtrl.text.trim();
+                          final email = emailCtrl.text.trim();
+                          final password = passwordCtrl.text.trim();
 
-                          if (nombre.isEmpty || rut.isEmpty) {
+                          if (nombre.isEmpty || rut.isEmpty || email.isEmpty || password.isEmpty) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(content: Text('Por favor completa todos los campos')),
+                            );
+                            return;
+                          }
+
+                          if (password.length < 6) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('La contraseña debe tener al menos 6 caracteres')),
                             );
                             return;
                           }
@@ -116,31 +146,12 @@ class _AdminCuidadoresScreenState extends State<AdminCuidadoresScreen> {
                           try {
                             String adminCentroId = SessionService().centroId;
 
-                            // 1. Obtener la contraseña del centro de la colección /centros/{centroId}
-                            DocumentSnapshot centroDoc = await FirebaseFirestore.instance
-                                .collection('centros')
-                                .doc(adminCentroId)
-                                .get();
-
-                            if (!centroDoc.exists) {
-                              throw 'No se pudo encontrar la información del centro actual.';
-                            }
-
-                            Map<String, dynamic> centroData =
-                                centroDoc.data() as Map<String, dynamic>;
-                            String contrasenaCentro =
-                                centroData['nombre'] ?? '';
-
-                            if (contrasenaCentro.isEmpty) {
-                              throw 'El centro actual no tiene un nombre configurado.';
-                            }
-
-                            // 2. Registrar el cuidador en Firebase Auth y Firestore
                             await _dbService.registrarCuidador(
                               rut: rut,
                               nombre: nombre,
                               centroId: adminCentroId,
-                              contrasenaCentro: contrasenaCentro,
+                              email: email,
+                              password: password,
                             );
 
                             if (!context.mounted) return;
@@ -266,7 +277,6 @@ class _AdminCuidadoresScreenState extends State<AdminCuidadoresScreen> {
               String rut = data['rut'] ?? '';
               String rutFormateado = _formatRutToShow(rut);
 
-              // Generar iniciales del cuidador
               List<String> parts = nombre.split(' ');
               String initials = '';
               if (parts.isNotEmpty && parts[0].isNotEmpty) {
@@ -318,8 +328,6 @@ class _AdminCuidadoresScreenState extends State<AdminCuidadoresScreen> {
                 },
                 onDismissed: (direction) async {
                   try {
-                    // Eliminamos el documento del cuidador de la colección /usuarios.
-                    // Al no estar registrado en Firestore, el login le bloqueará el acceso automáticamente.
                     await FirebaseFirestore.instance.collection('usuarios').doc(uid).delete();
                     if (!context.mounted) return;
                     ScaffoldMessenger.of(context).showSnackBar(
