@@ -574,52 +574,246 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
     );
   }
 
+  void _showEditMedicalRecordDialog(Map<String, dynamic> currentData) {
+    final bloodCtrl = TextEditingController(text: currentData['bloodType'] ?? '');
+    final allergiesCtrl = TextEditingController(text: currentData['allergies'] ?? '');
+    final pathCtrl = TextEditingController(text: currentData['pathologies'] ?? '');
+    final contactNameCtrl = TextEditingController(text: currentData['emergencyContactName'] ?? '');
+    final contactPhoneCtrl = TextEditingController(text: currentData['emergencyContactPhone'] ?? '');
+    final obsCtrl = TextEditingController(text: currentData['observations'] ?? '');
+
+    bool isSaving = false;
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setStateDialog) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              title: const Text('Editar Ficha Médica', style: TextStyle(fontWeight: FontWeight.bold)),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: bloodCtrl,
+                      decoration: const InputDecoration(labelText: 'Tipo de Sangre', hintText: 'Ej: O+'),
+                    ),
+                    const SizedBox(height: 15),
+                    TextField(
+                      controller: allergiesCtrl,
+                      decoration: const InputDecoration(labelText: 'Alergias', hintText: 'Ej: Penicilina, Nueces'),
+                    ),
+                    const SizedBox(height: 15),
+                    TextField(
+                      controller: pathCtrl,
+                      decoration: const InputDecoration(labelText: 'Patologías / Diagnóstico', hintText: 'Ej: Hipertensión, Diabetes'),
+                    ),
+                    const SizedBox(height: 15),
+                    const Divider(),
+                    const Align(alignment: Alignment.centerLeft, child: Text('Contacto de Emergencia', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey))),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: contactNameCtrl,
+                      decoration: const InputDecoration(labelText: 'Nombre Contacto', hintText: 'Ej: Carlos López (Hijo)'),
+                    ),
+                    const SizedBox(height: 15),
+                    TextField(
+                      controller: contactPhoneCtrl,
+                      keyboardType: TextInputType.phone,
+                      decoration: const InputDecoration(labelText: 'Teléfono Contacto', hintText: 'Ej: +56 9 1234 5678'),
+                    ),
+                    const SizedBox(height: 15),
+                    const Divider(),
+                    TextField(
+                      controller: obsCtrl,
+                      maxLines: 3,
+                      decoration: const InputDecoration(labelText: 'Observaciones Generales'),
+                    ),
+                  ],
+                ),
+              ),
+              actions: isSaving
+                  ? [const CircularProgressIndicator(color: AppTheme.blue)]
+                  : [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
+                      ),
+                      ElevatedButton(
+                        onPressed: () async {
+                          setStateDialog(() => isSaving = true);
+                          try {
+                            await _dbService.updateMedicalRecord(widget.patientId, {
+                              'bloodType': bloodCtrl.text.trim(),
+                              'allergies': allergiesCtrl.text.trim(),
+                              'pathologies': pathCtrl.text.trim(),
+                              'emergencyContactName': contactNameCtrl.text.trim(),
+                              'emergencyContactPhone': contactPhoneCtrl.text.trim(),
+                              'observations': obsCtrl.text.trim(),
+                            });
+                            if (!context.mounted) return;
+                            Navigator.pop(context);
+                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ficha actualizada'), backgroundColor: Colors.green));
+                          } catch (e) {
+                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red));
+                            setStateDialog(() => isSaving = false);
+                          }
+                        },
+                        style: ElevatedButton.styleFrom(backgroundColor: AppTheme.green),
+                        child: const Text('Guardar', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                      ),
+                    ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final session = SessionService();
+    final bool isAdmin = session.isAdmin;
+    final int tabCount = isAdmin ? 3 : 2;
 
-    if (session.isAdmin) {
-      return DefaultTabController(
-        length: 2,
-        child: Scaffold(
-          backgroundColor: Colors.grey.shade100,
-          appBar: AppBar(
-            backgroundColor: AppTheme.blue, elevation: 0,
-            iconTheme: const IconThemeData(color: Colors.white),
-            title: Column(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Text(widget.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.white)),
-                Text(widget.details, style: const TextStyle(fontSize: 13, color: Colors.white)),
-              ],
-            ),
-            bottom: const TabBar(
-              indicatorColor: Color(0xFF00C853), indicatorWeight: 3,
-              labelColor: Colors.white, unselectedLabelColor: Colors.white70,
-              tabs: [Tab(text: 'Tareas'), Tab(text: 'Asignación Semanal')],
-            ),
+    return DefaultTabController(
+      length: tabCount,
+      child: Scaffold(
+        backgroundColor: Colors.grey.shade100,
+        appBar: AppBar(
+          backgroundColor: AppTheme.blue, elevation: 0,
+          iconTheme: const IconThemeData(color: Colors.white),
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Text(widget.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.white)),
+              Text(widget.details, style: const TextStyle(fontSize: 13, color: Colors.white)),
+            ],
           ),
-          body: TabBarView(
-            children: [_buildTasksTab(context, session), _buildAssignmentsTab(context)],
+          bottom: TabBar(
+            indicatorColor: const Color(0xFF00C853), indicatorWeight: 3,
+            labelColor: Colors.white, unselectedLabelColor: Colors.white70,
+            tabs: [
+              const Tab(text: 'Tareas'),
+              if (isAdmin) const Tab(text: 'Asignación'),
+              const Tab(text: 'Ficha Médica'),
+            ],
           ),
         ),
-      );
-    }
-
-    return Scaffold(
-      backgroundColor: Colors.grey.shade100,
-      appBar: AppBar(
-        backgroundColor: AppTheme.blue, elevation: 0,
-        iconTheme: const IconThemeData(color: Colors.white),
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        body: TabBarView(
           children: [
-            Text(widget.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.white)),
-            Text(widget.details, style: const TextStyle(fontSize: 13, color: Colors.white)),
+            _buildTasksTab(context, session),
+            if (isAdmin) _buildAssignmentsTab(context),
+            _buildMedicalRecordTab(context, session),
           ],
         ),
       ),
-      body: _buildTasksTab(context, session),
+    );
+  }
+
+  Widget _buildMedicalRecordTab(BuildContext context, SessionService session) {
+    return StreamBuilder<DocumentSnapshot>(
+      stream: _patientSnapshotStream,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator(color: AppTheme.blue));
+        }
+        if (!snapshot.hasData || !snapshot.data!.exists) {
+          return const Center(child: Text('Error al cargar la ficha médica.'));
+        }
+
+        final data = snapshot.data!.data() as Map<String, dynamic>;
+        
+        final bloodType = data['bloodType']?.toString().isNotEmpty == true ? data['bloodType'] : 'No registrado';
+        final allergies = data['allergies']?.toString().isNotEmpty == true ? data['allergies'] : 'No registradas';
+        final pathologies = data['pathologies']?.toString().isNotEmpty == true ? data['pathologies'] : 'No registradas';
+        final emergencyName = data['emergencyContactName']?.toString().isNotEmpty == true ? data['emergencyContactName'] : 'Sin contacto';
+        final emergencyPhone = data['emergencyContactPhone']?.toString().isNotEmpty == true ? data['emergencyContactPhone'] : '--';
+        final observations = data['observations']?.toString().isNotEmpty == true ? data['observations'] : 'Sin observaciones generales.';
+
+        return ListView(
+          padding: const EdgeInsets.all(20.0),
+          children: [
+            if (session.isAdmin)
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: () => _showEditMedicalRecordDialog(data),
+                  icon: const Icon(Icons.edit, color: AppTheme.blue, size: 18),
+                  label: const Text('Editar Ficha', style: TextStyle(color: AppTheme.blue, fontWeight: FontWeight.bold)),
+                ),
+              ),
+            
+            _buildMedicalInfoCard(
+              title: 'Información Clínica',
+              icon: Icons.favorite,
+              color: Colors.redAccent,
+              children: [
+                _buildInfoRow('Tipo de Sangre', bloodType),
+                const Divider(height: 24),
+                _buildInfoRow('Alergias', allergies),
+                const Divider(height: 24),
+                _buildInfoRow('Patologías Crónicas', pathologies),
+              ],
+            ),
+            const SizedBox(height: 15),
+
+            _buildMedicalInfoCard(
+              title: 'Contacto de Emergencia',
+              icon: Icons.contact_phone,
+              color: Colors.orange,
+              children: [
+                _buildInfoRow('Nombre', emergencyName),
+                const Divider(height: 24),
+                _buildInfoRow('Teléfono', emergencyPhone),
+              ],
+            ),
+            const SizedBox(height: 15),
+
+            _buildMedicalInfoCard(
+              title: 'Observaciones Generales',
+              icon: Icons.note_alt,
+              color: AppTheme.blue,
+              children: [
+                Text(observations, style: const TextStyle(fontSize: 14, color: Colors.black87, height: 1.4)),
+              ],
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildMedicalInfoCard({required String title, required IconData icon, required Color color, required List<Widget> children}) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 4))]),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: color, size: 22),
+              const SizedBox(width: 10),
+              Text(title, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: color)),
+            ],
+          ),
+          const SizedBox(height: 20),
+          ...children,
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoRow(String label, String value) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(width: 120, child: Text(label, style: const TextStyle(color: Colors.grey, fontSize: 14, fontWeight: FontWeight.w600))),
+        Expanded(child: Text(value, style: const TextStyle(color: Colors.black87, fontSize: 14, fontWeight: FontWeight.w600))),
+      ],
     );
   }
 

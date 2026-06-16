@@ -65,7 +65,18 @@ class DatabaseService {
       'progressChips': [],
       'asignaciones': [],
       'fechaIngreso': FieldValue.serverTimestamp(),
+      // Campos base Ficha Médica
+      'bloodType': '',
+      'allergies': '',
+      'pathologies': '',
+      'emergencyContactName': '',
+      'emergencyContactPhone': '',
+      'observations': '',
     });
+  }
+
+  Future<void> updateMedicalRecord(String patientId, Map<String, dynamic> data) async {
+    await _db.collection('pacientes').doc(patientId).update(data);
   }
 
   Future<void> deletePaciente(String pacienteId) async {
