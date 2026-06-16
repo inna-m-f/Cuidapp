@@ -20,7 +20,6 @@ class _AdminCuidadoresScreenState extends State<AdminCuidadoresScreen> {
   @override
   void initState() {
     super.initState();
-    // MODIFICADO: Pasa el centroId activo para cargar solo los cuidadores de este entorno
     _cuidadoresStream = _dbService.getCuidadoresStream(SessionService().centroId);
   }
 
@@ -155,7 +154,7 @@ class _AdminCuidadoresScreenState extends State<AdminCuidadoresScreen> {
                               password: password,
                             );
 
-                            if (!context.mounted) return;
+                            if (!dialogContext.mounted) return;
                             Navigator.pop(dialogContext);
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(

@@ -322,6 +322,69 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  void _showEditPatientDialog(BuildContext context, String patientId, String currentName, String currentDetails) {
+    final TextEditingController nameCtrl = TextEditingController(text: currentName);
+    final TextEditingController detailsCtrl = TextEditingController(text: currentDetails);
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text('Editar Paciente', style: TextStyle(fontWeight: FontWeight.bold)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameCtrl,
+                textCapitalization: TextCapitalization.words,
+                decoration: const InputDecoration(labelText: 'Nombre Completo'),
+              ),
+              const SizedBox(height: 15),
+              TextField(
+                controller: detailsCtrl,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: const InputDecoration(labelText: 'Detalles (Edad / Habitación)'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final name = nameCtrl.text.trim();
+                final details = detailsCtrl.text.trim();
+
+                if (name.isEmpty || details.isEmpty) return;
+
+                List<String> parts = name.split(' ');
+                String initials = '';
+                if (parts.isNotEmpty && parts[0].isNotEmpty) initials += parts[0][0];
+                if (parts.length > 1 && parts[1].isNotEmpty) initials += parts[1][0];
+                if (initials.isEmpty) initials = 'P';
+
+                try {
+                  await _dbService.updatePacienteData(patientId, {
+                    'name': name,
+                    'details': details,
+                    'initials': initials.toUpperCase(),
+                  });
+                  if (!context.mounted) return;
+                  Navigator.pop(context);
+                } catch (_) {}
+              },
+              style: ElevatedButton.styleFrom(backgroundColor: AppTheme.blue),
+              child: const Text('Actualizar', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   Widget _buildDrawer(BuildContext context, SessionService session) {
     return Drawer(
       child: Column(
@@ -596,6 +659,14 @@ class _HomeScreenState extends State<HomeScreen> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Expanded(child: Text(name, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87))),
+                      const SizedBox(width: 8),
+                      if (session.isAdmin)
+                        IconButton(
+                          icon: const Icon(Icons.edit, color: AppTheme.blue, size: 20),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                          onPressed: () => _showEditPatientDialog(context, patientId, name, details),
+                        ),
                       const SizedBox(width: 8),
                       _buildStatusBadge(status),
                     ],

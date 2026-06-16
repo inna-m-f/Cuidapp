@@ -65,7 +65,6 @@ class DatabaseService {
       'progressChips': [],
       'asignaciones': [],
       'fechaIngreso': FieldValue.serverTimestamp(),
-      // Campos base Ficha Médica
       'bloodType': '',
       'allergies': '',
       'pathologies': '',
@@ -73,6 +72,10 @@ class DatabaseService {
       'emergencyContactPhone': '',
       'observations': '',
     });
+  }
+
+  Future<void> updatePacienteData(String patientId, Map<String, dynamic> data) async {
+    await _db.collection('pacientes').doc(patientId).update(data);
   }
 
   Future<void> updateMedicalRecord(String patientId, Map<String, dynamic> data) async {
@@ -231,6 +234,11 @@ class DatabaseService {
       'fechaCreacion': FieldValue.serverTimestamp(),
     });
     return docRef.id;
+  }
+
+  // NUEVO: Método para actualizar tareas
+  Future<void> updateTaskData(String patientId, String taskId, Map<String, dynamic> data) async {
+    await _db.collection('pacientes').doc(patientId).collection('tareas').doc(taskId).update(data);
   }
 
   Future<void> deleteTask(String patientId, String taskId) async {
