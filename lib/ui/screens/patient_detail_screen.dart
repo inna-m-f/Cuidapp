@@ -4,6 +4,7 @@ import '../../core/theme.dart';
 import '../../services/database_service.dart';
 import '../../services/session_service.dart';
 import '../../services/notification_service.dart';
+import 'patient_history_screen.dart';
 
 class PatientDetailScreen extends StatefulWidget {
   final String patientId;
@@ -683,7 +684,8 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
       child: Scaffold(
         backgroundColor: Colors.grey.shade100,
         appBar: AppBar(
-          backgroundColor: AppTheme.blue, elevation: 0,
+          backgroundColor: AppTheme.blue, 
+          elevation: 0,
           iconTheme: const IconThemeData(color: Colors.white),
           title: Column(
             crossAxisAlignment: CrossAxisAlignment.center,
@@ -692,6 +694,24 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
               Text(widget.details, style: const TextStyle(fontSize: 13, color: Colors.white)),
             ],
           ),
+          actions: [
+            if (isAdmin)
+              IconButton(
+                icon: const Icon(Icons.history_edu, color: Colors.white),
+                tooltip: 'Auditoría Semanal',
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => PatientHistoryScreen(
+                        patientId: widget.patientId,
+                        patientName: widget.name,
+                      ),
+                    ),
+                  );
+                },
+              ),
+          ],
           bottom: TabBar(
             indicatorColor: const Color(0xFF00C853), indicatorWeight: 3,
             labelColor: Colors.white, unselectedLabelColor: Colors.white70,
@@ -821,7 +841,7 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
     return StreamBuilder<QuerySnapshot>(
       stream: _caregiversStream,
       builder: (context, snapshotCaregivers) {
-        final Map<String, String> caregiverMap = {};
+        final Map<String, String> caregiverMap = {}; // Línea corregida
 
         if (snapshotCaregivers.hasData) {
           for (final doc in snapshotCaregivers.data!.docs) {
