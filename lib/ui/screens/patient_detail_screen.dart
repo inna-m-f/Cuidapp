@@ -62,6 +62,12 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
     required List<String> alreadyAssignedUids,
     required List<QueryDocumentSnapshot> allCaregivers,
   }) {
+    final session = SessionService();
+    final String adminUid = session.uid;
+    
+    // Verificamos si el administrador ya está asignado a este día
+    final bool canAssignSelf = !alreadyAssignedUids.contains(adminUid);
+
     final unassigned = allCaregivers
         .where((doc) => !alreadyAssignedUids.contains(doc.id))
         .toList();
@@ -75,86 +81,98 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
             'Asignar Cuidador - $dia',
             style: const TextStyle(fontWeight: FontWeight.bold),
           ),
-          content: unassigned.isEmpty
+          content: (unassigned.isEmpty && !canAssignSelf)
               ? const Text(
-                  'Todos los cuidadores disponibles ya están asignados a este día.',
+                  'Todos los cuidadores (incluyéndote) ya están asignados a este día.',
                   style: TextStyle(color: Colors.black54),
                 )
               : SizedBox(
                   width: double.maxFinite,
-                  child: ListView.separated(
-                    shrinkWrap: true,
-                    itemCount: unassigned.length,
-                    separatorBuilder: (context, index) => const Divider(),
-                    itemBuilder: (context, index) {
-                      final doc = unassigned[index];
-                      final data = doc.data() as Map<String, dynamic>;
-                      final String uid = doc.id;
-                      final String nombre = data['nombre'] ?? 'Sin nombre';
-                      final String rut = data['rut'] ?? '';
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // --- NUEVO: Botón de Autoasignación para el Admin ---
+                      if (canAssignSelf) ...[
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: CircleAvatar(
+                            backgroundColor: AppTheme.green.withOpacity(0.15),
+                            child: const Icon(Icons.admin_panel_settings, color: AppTheme.green, size: 22),
+                          ),
+                          title: const Text('Asignarme a mí', style: TextStyle(fontWeight: FontWeight.bold, color: AppTheme.green)),
+                          subtitle: const Text('Asumir labores de cuidador', style: TextStyle(fontSize: 12)),
+                          trailing: const Icon(Icons.add_circle, color: AppTheme.green),
+                          onTap: () async {
+                            try {
+                              await _dbService.asignarCuidadorAPaciente(
+                                pacienteId: widget.patientId,
+                                cuidadorId: adminUid,
+                                diaSemana: _normalizeDia(dia),
+                              );
+                              if (!context.mounted) return;
+                              Navigator.pop(context);
+                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Te has autoasignado para el día $dia'), backgroundColor: Colors.green));
+                            } catch (e) {
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red));
+                            }
+                          },
+                        ),
+                        if (unassigned.isNotEmpty) const Divider(height: 20),
+                      ],
 
-                      return ListTile(
-                        leading: CircleAvatar(
-                          backgroundColor: AppTheme.blue.withOpacity(0.1),
-                          child: Text(
-                            nombre.isNotEmpty ? nombre[0].toUpperCase() : 'C',
-                            style: const TextStyle(
-                              color: AppTheme.blue,
-                              fontWeight: FontWeight.bold,
-                            ),
+                      // Lista normal de cuidadores
+                      if (unassigned.isNotEmpty)
+                        Flexible(
+                          child: ListView.separated(
+                            shrinkWrap: true,
+                            itemCount: unassigned.length,
+                            separatorBuilder: (context, index) => const Divider(),
+                            itemBuilder: (context, index) {
+                              final doc = unassigned[index];
+                              final data = doc.data() as Map<String, dynamic>;
+                              final String uid = doc.id;
+                              final String nombre = data['nombre'] ?? 'Sin nombre';
+                              final String rut = data['rut'] ?? '';
+
+                              return ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                leading: CircleAvatar(
+                                  backgroundColor: AppTheme.blue.withOpacity(0.1),
+                                  child: Text(
+                                    nombre.isNotEmpty ? nombre[0].toUpperCase() : 'C',
+                                    style: const TextStyle(color: AppTheme.blue, fontWeight: FontWeight.bold),
+                                  ),
+                                ),
+                                title: Text(nombre, style: const TextStyle(fontWeight: FontWeight.bold)),
+                                subtitle: Text('RUT: $rut'),
+                                trailing: const Icon(Icons.add_circle_outline, color: AppTheme.blue),
+                                onTap: () async {
+                                  try {
+                                    await _dbService.asignarCuidadorAPaciente(
+                                      pacienteId: widget.patientId,
+                                      cuidadorId: uid,
+                                      diaSemana: _normalizeDia(dia),
+                                    );
+                                    if (!context.mounted) return;
+                                    Navigator.pop(context);
+                                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$nombre asignado correctamente para el día $dia'), backgroundColor: Colors.green));
+                                  } catch (e) {
+                                    if (!context.mounted) return;
+                                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red));
+                                  }
+                                },
+                              );
+                            },
                           ),
                         ),
-                        title: Text(
-                          nombre,
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                        subtitle: Text('RUT: $rut'),
-                        trailing: const Icon(
-                          Icons.add_circle_outline,
-                          color: AppTheme.blue,
-                        ),
-                        onTap: () async {
-                          try {
-                            await _dbService.asignarCuidadorAPaciente(
-                              pacienteId: widget.patientId,
-                              cuidadorId: uid,
-                              diaSemana: _normalizeDia(dia),
-                            );
-
-                            if (!context.mounted) return;
-
-                            Navigator.pop(context);
-
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  '$nombre asignado correctamente para el día $dia',
-                                ),
-                                backgroundColor: Colors.green,
-                              ),
-                            );
-                          } catch (e) {
-                            if (!context.mounted) return;
-
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('Error: $e'),
-                                backgroundColor: Colors.red,
-                              ),
-                            );
-                          }
-                        },
-                      );
-                    },
+                    ],
                   ),
                 ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text(
-                'Cerrar',
-                style: TextStyle(color: Colors.grey),
-              ),
+              child: const Text('Cerrar', style: TextStyle(color: Colors.grey)),
             ),
           ],
         );
@@ -841,7 +859,11 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
     return StreamBuilder<QuerySnapshot>(
       stream: _caregiversStream,
       builder: (context, snapshotCaregivers) {
-        final Map<String, String> caregiverMap = {}; // Línea corregida
+        
+        // --- NUEVO: Inyectamos manualmente al Admin en el mapa para que su nombre se lea bien ---
+        final Map<String, String> caregiverMap = {
+          session.uid: '${session.nombre} (Yo)',
+        };
 
         if (snapshotCaregivers.hasData) {
           for (final doc in snapshotCaregivers.data!.docs) {
@@ -1047,7 +1069,7 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
   }
 
   Widget _buildAssignmentsTab(BuildContext context) {
-    final String adminCentroId = SessionService().centroId;
+    final session = SessionService();
     final List<String> dias = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 
     return StreamBuilder<QuerySnapshot>(
@@ -1061,7 +1083,11 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
           return const Center(child: Text('Error al obtener la lista de cuidadores.'));
         }
 
-        Map<String, String> caregiverNames = {};
+        // --- NUEVO: Inyectamos manualmente al Admin en el mapa para los chips ---
+        Map<String, String> caregiverNames = {
+          session.uid: '${session.nombre} (Yo)',
+        };
+        
         List<QueryDocumentSnapshot> caregiversDocs = [];
 
         if (caregiversSnapshot.hasData) {
