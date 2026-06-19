@@ -2,11 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:provider/provider.dart';
 import 'home_screen.dart';
 import 'no_centro_screen.dart';
 import '../../core/theme.dart';
 import '../../services/auth_service.dart';
-import '../../services/session_service.dart';
+import '../../providers/session_provider.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({Key? key}) : super(key: key);
@@ -20,6 +21,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _passwordController = TextEditingController(); 
   final AuthService _authService = AuthService();
   bool _isLoading = false;
+  bool _isCheckingAutoLogin = true;
 
   @override
   void initState() {
@@ -43,12 +45,16 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _checkAutoLogin() async {
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _isCheckingAutoLogin = true;
+    });
     try {
-      final hasCachedSession = await SessionService().loadSession();
+      final sessionProvider = Provider.of<SessionProvider>(context, listen: false);
+      final hasCachedSession = await sessionProvider.loadSession();
       if (hasCachedSession) {
         if (!mounted) return;
-        if (SessionService().centros.isEmpty) {
+        if (sessionProvider.centros.isEmpty) {
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(builder: (context) => const NoCentroScreen()),
@@ -92,7 +98,7 @@ class _LoginScreenState extends State<LoginScreen> {
             }
           }
 
-          await SessionService().initialize(
+          await sessionProvider.initialize(
             uid: user.uid,
             nombre: data['nombre'] ?? data['name'] ?? '',
             rut: data['rut'] ?? '',
@@ -128,7 +134,12 @@ class _LoginScreenState extends State<LoginScreen> {
     } catch (e) {
       await _authService.signOut();
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _isCheckingAutoLogin = false;
+        });
+      }
     }
   }
 
@@ -280,7 +291,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (!mounted) return;
 
-      if (SessionService().centros.isEmpty) {
+      final sessionProvider = Provider.of<SessionProvider>(context, listen: false);
+      if (sessionProvider.centros.isEmpty) {
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (context) => const NoCentroScreen()),
@@ -313,6 +325,25 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_isCheckingAutoLogin) {
+      return const Scaffold(
+        backgroundColor: AppTheme.blue,
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(color: Colors.white),
+              SizedBox(height: 20),
+              Text(
+                'Cargando sesión...',
+                style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: AppTheme.blue,
       body: SafeArea(

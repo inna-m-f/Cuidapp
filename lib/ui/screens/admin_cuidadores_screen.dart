@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:provider/provider.dart';
 import '../../core/theme.dart';
 import '../../core/rut_formatter.dart';
 import '../../services/database_service.dart';
-import '../../services/session_service.dart';
+import '../../providers/session_provider.dart';
 
 class AdminCuidadoresScreen extends StatefulWidget {
   const AdminCuidadoresScreen({Key? key}) : super(key: key);
@@ -20,7 +21,8 @@ class _AdminCuidadoresScreenState extends State<AdminCuidadoresScreen> {
   @override
   void initState() {
     super.initState();
-    _cuidadoresStream = _dbService.getCuidadoresStream(SessionService().centroId);
+    final adminCentroId = Provider.of<SessionProvider>(context, listen: false).centroId;
+    _cuidadoresStream = _dbService.getCuidadoresStream(adminCentroId);
   }
 
   String _formatRutToShow(String rut) {
@@ -196,7 +198,7 @@ class _AdminCuidadoresScreenState extends State<AdminCuidadoresScreen> {
                               final userDoc = await _dbService.findUserByRut(rut);
                               if (userDoc != null && userDoc.exists) {
                                 final data = userDoc.data() as Map<String, dynamic>;
-                                final String adminCentroId = SessionService().centroId;
+                                final String adminCentroId = Provider.of<SessionProvider>(context, listen: false).centroId;
                                 final List<String> centros = List<String>.from(data['centros'] ?? []);
                                 final List<String> invs = List<String>.from(data['invitaciones'] ?? []);
 
@@ -233,7 +235,7 @@ class _AdminCuidadoresScreenState extends State<AdminCuidadoresScreen> {
                           onPressed: () async {
                             setStateDialog(() => _isSaving = true);
                             try {
-                              final String adminCentroId = SessionService().centroId;
+                              final String adminCentroId = Provider.of<SessionProvider>(context, listen: false).centroId;
                               await _dbService.inviteUserToCentro(foundUserId, adminCentroId);
                               if (!dialogContext.mounted) return;
                               Navigator.pop(dialogContext);
@@ -281,7 +283,7 @@ class _AdminCuidadoresScreenState extends State<AdminCuidadoresScreen> {
 
                             setStateDialog(() => _isSaving = true);
                             try {
-                              final String adminCentroId = SessionService().centroId;
+                              final String adminCentroId = Provider.of<SessionProvider>(context, listen: false).centroId;
                               await _dbService.registrarCuidador(
                                 rut: rut,
                                 nombre: nombre,
@@ -325,7 +327,16 @@ class _AdminCuidadoresScreenState extends State<AdminCuidadoresScreen> {
 
   @override
   Widget build(BuildContext context) {
-    String adminCentroId = SessionService().centroId;
+    final session = context.watch<SessionProvider>();
+    String adminCentroId = session.centroId;
+
+    if (session.uid.isEmpty || adminCentroId.isEmpty) {
+      return const Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(color: AppTheme.blue),
+        ),
+      );
+    }
 
     return Scaffold(
       backgroundColor: Colors.grey.shade100,
@@ -422,7 +433,7 @@ class _AdminCuidadoresScreenState extends State<AdminCuidadoresScreen> {
               }
               if (initials.isEmpty) initials = 'C';
 
-              final bool isSelf = uid == SessionService().uid;
+              final bool isSelf = uid == session.uid;
 
               return Dismissible(
                 key: Key(uid),
@@ -488,8 +499,9 @@ class _AdminCuidadoresScreenState extends State<AdminCuidadoresScreen> {
                 },
                 child: Container(
                   decoration: BoxDecoration(
-                    color: isSelf ? Colors.grey.shade100 : AppTheme.white,
+                    color: isSelf ? Colors.grey.shade50 : AppTheme.white,
                     borderRadius: BorderRadius.circular(20),
+                    border: isSelf ? Border.all(color: Colors.grey.shade300, width: 1.5) : null,
                     boxShadow: isSelf
                         ? []
                         : [
@@ -567,6 +579,10 @@ class _AdminCuidadoresScreenState extends State<AdminCuidadoresScreen> {
                           ],
                         ),
                       ),
+                      if (isSelf) ...[
+                        const SizedBox(width: 10),
+                        Icon(Icons.lock_outline_rounded, color: Colors.grey.shade400, size: 24),
+                      ],
                     ],
                   ),
                 ),

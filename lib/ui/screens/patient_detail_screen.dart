@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:provider/provider.dart';
 import '../../core/theme.dart';
 import '../../services/database_service.dart';
-import '../../services/session_service.dart';
 import '../../services/notification_service.dart';
+import '../../providers/session_provider.dart';
 import 'patient_history_screen.dart';
 
 class PatientDetailScreen extends StatefulWidget {
@@ -26,24 +27,6 @@ class PatientDetailScreen extends StatefulWidget {
 
 class _PatientDetailScreenState extends State<PatientDetailScreen> {
   final DatabaseService _dbService = DatabaseService();
-  late Stream<QuerySnapshot> _caregiversStream;
-  late Stream<QuerySnapshot> _tasksStream;
-  late Stream<QuerySnapshot> _allCuidadoresStream;
-  late Stream<DocumentSnapshot> _patientSnapshotStream;
-
-  @override
-  void initState() {
-    super.initState();
-    final currentCentroId = SessionService().centroId;
-
-    _caregiversStream = _dbService.getCuidadoresStream(currentCentroId);
-    _tasksStream = _dbService.getPatientTasksForTodayStream(widget.patientId);
-    _allCuidadoresStream = _dbService.getCuidadoresStream(currentCentroId);
-    _patientSnapshotStream = FirebaseFirestore.instance
-        .collection('pacientes')
-        .doc(widget.patientId)
-        .snapshots();
-  }
 
   String _normalizeDia(String dia) {
     switch (dia.toLowerCase()) {
@@ -62,7 +45,7 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
     required List<String> alreadyAssignedUids,
     required List<QueryDocumentSnapshot> allCaregivers,
   }) {
-    final session = SessionService();
+    final session = Provider.of<SessionProvider>(context, listen: false);
     final String adminUid = session.uid;
     
     final bool canAssignSelf = !alreadyAssignedUids.contains(adminUid);
@@ -564,7 +547,7 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                               patientId: widget.patientId, title: title, time: formattedTime, category: selectedCategory, diasSemana: selectedDays.toList(),
                             );
 
-                            if (!SessionService().isAdmin) {
+                            if (!Provider.of<SessionProvider>(context, listen: false).isAdmin) {
                               await NotificationService.scheduleMedicationReminder(
                                 taskId: taskId, patientName: widget.name, medicationName: title, time: formattedTime, diasSemana: selectedDays.toList(), category: selectedCategory,
                               );
@@ -955,9 +938,17 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final session = SessionService();
+    final session = context.watch<SessionProvider>();
     final bool isAdmin = session.isAdmin;
     final int tabCount = isAdmin ? 3 : 2;
+
+    if (session.uid.isEmpty || session.centroId.isEmpty) {
+      return const Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(color: AppTheme.blue),
+        ),
+      );
+    }
 
     return DefaultTabController(
       length: tabCount,
@@ -1013,9 +1004,9 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
     );
   }
 
-  Widget _buildMedicalRecordTab(BuildContext context, SessionService session) {
+  Widget _buildMedicalRecordTab(BuildContext context, SessionProvider session) {
     return StreamBuilder<DocumentSnapshot>(
-      stream: _patientSnapshotStream,
+      stream: FirebaseFirestore.instance.collection('pacientes').doc(widget.patientId).snapshots(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator(color: AppTheme.blue));
@@ -1137,9 +1128,9 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
     );
   }
 
-  Widget _buildTasksTab(BuildContext context, SessionService session) {
+  Widget _buildTasksTab(BuildContext context, SessionProvider session) {
     return StreamBuilder<QuerySnapshot>(
-      stream: _caregiversStream,
+      stream: _dbService.getCuidadoresStream(session.centroId),
       builder: (context, snapshotCaregivers) {
         
         final Map<String, String> caregiverMap = {
@@ -1154,7 +1145,7 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
         }
 
         return StreamBuilder<QuerySnapshot>(
-          stream: _tasksStream,
+          stream: _dbService.getPatientTasksForTodayStream(widget.patientId),
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const Center(child: CircularProgressIndicator(color: AppTheme.blue));
@@ -1244,7 +1235,7 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
     required int total,
     required List<QueryDocumentSnapshot> tasks,
     required Map<String, String> caregiverMap,
-    required SessionService session,
+    required SessionProvider session,
   }) {
     final color = _getCategoryColor(category);
 
@@ -1299,7 +1290,7 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
   }) {
     final row = InkWell(
       onTap: isAdmin ? null : () {
-        _dbService.updateTaskStatus(widget.patientId, taskId, !isChecked, SessionService().uid);
+        _dbService.updateTaskStatus(widget.patientId, taskId, !isChecked, Provider.of<SessionProvider>(context, listen: false).uid);
       },
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13),
@@ -1366,11 +1357,11 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
   }
 
   Widget _buildAssignmentsTab(BuildContext context) {
-    final session = SessionService();
+    final session = context.read<SessionProvider>();
     final List<String> dias = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 
     return StreamBuilder<QuerySnapshot>(
-      stream: _allCuidadoresStream,
+      stream: _dbService.getCuidadoresStream(session.centroId),
       builder: (context, caregiversSnapshot) {
         if (caregiversSnapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator(color: AppTheme.blue));
@@ -1394,7 +1385,7 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
         }
 
         return StreamBuilder<DocumentSnapshot>(
-          stream: _patientSnapshotStream,
+          stream: FirebaseFirestore.instance.collection('pacientes').doc(widget.patientId).snapshots(),
           builder: (context, patientSnapshot) {
             if (patientSnapshot.connectionState == ConnectionState.waiting) {
               return const Center(child: CircularProgressIndicator(color: AppTheme.blue));

@@ -315,16 +315,6 @@ class NotificationService {
   }) async {
     if (kIsWeb) return;
 
-    final session = SessionService();
-    if (session.isAdmin) {
-      try {
-        await _notifications.cancelAll();
-      } catch (e) {
-        debugPrint('Error al limpiar alarmas de admin: $e');
-      }
-      return;
-    }
-
     try {
       // 1. Cancelar todas las alarmas previas en este dispositivo para empezar limpio
       await _notifications.cancelAll();

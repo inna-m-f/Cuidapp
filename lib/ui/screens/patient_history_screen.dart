@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 import '../../core/theme.dart';
 import '../../services/database_service.dart';
-import '../../services/session_service.dart';
+import '../../providers/session_provider.dart';
 
 class PatientHistoryScreen extends StatefulWidget {
   final String patientId;
@@ -33,7 +34,8 @@ class _PatientHistoryScreenState extends State<PatientHistoryScreen> {
     super.initState();
     _calculateCurrentWeek();
     _tasksStream = _dbService.getPatientTasksStream(widget.patientId);
-    _caregiversStream = _dbService.getCuidadoresStream(SessionService().centroId);
+    final centroId = Provider.of<SessionProvider>(context, listen: false).centroId;
+    _caregiversStream = _dbService.getCuidadoresStream(centroId);
   }
 
   void _calculateCurrentWeek() {

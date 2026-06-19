@@ -1,10 +1,11 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:provider/provider.dart';
 import '../../core/theme.dart';
 import '../../services/database_service.dart';
 import '../../services/auth_service.dart';
-import '../../services/session_service.dart';
+import '../../providers/session_provider.dart';
 import 'login_screen.dart';
 import 'patient_detail_screen.dart';
 import 'admin_cuidadores_screen.dart';
@@ -26,6 +27,8 @@ class _HomeScreenState extends State<HomeScreen> {
   final Map<String, StreamSubscription<QuerySnapshot>> _taskSubscriptions = {};
   StreamSubscription<DocumentSnapshot>? _userSubscription;
   List<String>? _previousInvitations;
+  Timer? _offlineTimer;
+  final ValueNotifier<bool> _showOfflineNotifier = ValueNotifier<bool>(false);
 
   @override
   void initState() {
@@ -36,7 +39,7 @@ class _HomeScreenState extends State<HomeScreen> {
       });
     });
 
-    final session = SessionService();
+    final session = Provider.of<SessionProvider>(context, listen: false);
     _pacientesStream = _dbService.getPacientesStream(
       centroId: session.centroId,
       rol: session.activeRole, 
@@ -58,7 +61,7 @@ class _HomeScreenState extends State<HomeScreen> {
       final Map<String, dynamic> rawRoles = data['roles'] ?? {};
       final Map<String, String> currentRoles = rawRoles.map((key, value) => MapEntry(key, value.toString()));
 
-      // Mantener SessionService sincronizado con los datos en tiempo real de Firestore
+      // Mantener SessionProvider sincronizado con los datos en tiempo real de Firestore
       await session.updateSessionData(
         centros: currentCentros,
         roles: currentRoles,
@@ -69,24 +72,28 @@ class _HomeScreenState extends State<HomeScreen> {
         setState(() {});
       }
 
-      if (_previousInvitations != null) {
-        final newInvites = currentInvitations.where((id) => !_previousInvitations!.contains(id)).toList();
-        for (final cId in newInvites) {
-          try {
-            final centerDoc = await FirebaseFirestore.instance.collection('centros').doc(cId).get();
-            String nombreCentro = cId;
-            if (centerDoc.exists) {
-              final cData = centerDoc.data() as Map<String, dynamic>?;
-              nombreCentro = cData?['nombre'] ?? cId;
-            }
-            await NotificationService.showImmediateNotification(
-              id: cId.hashCode,
-              title: 'Nueva Invitación de Centro',
-              body: 'Has recibido una invitación para unirte a "$nombreCentro".',
-            );
-          } catch (e) {
-            debugPrint('Error al mostrar notificación de invitación: $e');
+      final List<String> invitesToNotify = [];
+      if (_previousInvitations == null) {
+        invitesToNotify.addAll(currentInvitations);
+      } else {
+        invitesToNotify.addAll(currentInvitations.where((id) => !_previousInvitations!.contains(id)));
+      }
+
+      for (final cId in invitesToNotify) {
+        try {
+          final centerDoc = await FirebaseFirestore.instance.collection('centros').doc(cId).get();
+          String nombreCentro = cId;
+          if (centerDoc.exists) {
+            final cData = centerDoc.data() as Map<String, dynamic>?;
+            nombreCentro = cData?['nombre'] ?? cId;
           }
+          await NotificationService.showImmediateNotification(
+            id: cId.hashCode,
+            title: 'Nueva Invitación de Centro',
+            body: 'Has recibido una invitación para unirte a "$nombreCentro".',
+          );
+        } catch (e) {
+          debugPrint('Error al mostrar notificación de invitación: $e');
         }
       }
       _previousInvitations = currentInvitations;
@@ -95,6 +102,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    _offlineTimer?.cancel();
+    _showOfflineNotifier.dispose();
     _searchController.dispose();
     _userSubscription?.cancel();
     for (final subscription in _taskSubscriptions.values) {
@@ -348,7 +357,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
                 try {
                   await _dbService.addPaciente(
-                    centroId: SessionService().centroId,
+                    centroId: Provider.of<SessionProvider>(context, listen: false).centroId,
                     name: name,
                     details: details,
                     initials: initials,
@@ -437,297 +446,303 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildDrawer(BuildContext context, SessionService session) {
+  Widget _buildDrawer(BuildContext context, SessionProvider session) {
     return Drawer(
       child: Column(
         children: [
-          UserAccountsDrawerHeader(
-            decoration: const BoxDecoration(color: AppTheme.blue),
-            accountName: Text(session.nombre, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-            accountEmail: Text('RUT: ${AppTheme.formatRut(session.rut)}'),
-            currentAccountPicture: CircleAvatar(
-              backgroundColor: Colors.white,
-              child: Text(
-                session.nombre.isNotEmpty ? session.nombre[0].toUpperCase() : 'U',
-                style: const TextStyle(fontSize: 24, color: AppTheme.blue, fontWeight: FontWeight.bold),
-              ),
-            ),
-          ),
-          if (session.isRealAdmin) ...[
-            ListTile(
-              leading: const Icon(Icons.people_alt_outlined, color: Colors.black87),
-              title: const Text('Gestionar Cuidadores'),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.push(context, MaterialPageRoute(builder: (context) => const AdminCuidadoresScreen()));
-              },
-            ),
-            const Divider(),
-            ListTile(
-              leading: Icon(
-                session.activeRole == 'admin' ? Icons.visibility_outlined : Icons.admin_panel_settings, 
-                color: Colors.black87
-              ),
-              title: Text(session.activeRole == 'admin' ? 'Cambiar a vista Cuidador' : 'Volver a vista Admin'),
-              subtitle: Text(
-                session.activeRole == 'admin' ? 'Verás la app como un trabajador' : 'Recuperar controles de edición',
-                style: const TextStyle(fontSize: 12),
-              ),
-              onTap: () async {
-                Navigator.pop(context);
-                String newRole = session.activeRole == 'admin' ? 'cuidador' : 'admin';
-                await session.setActiveRole(newRole);
-                
-                if (!context.mounted) return;
-                Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const HomeScreen()));
-              },
-            ),
-          ],
-          
-          if (session.centros.length > 1) ...[
-            const Divider(),
-            const Padding(
-              padding: EdgeInsets.only(left: 16.0, top: 10, bottom: 5),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'Centros Disponibles',
-                  style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey, fontSize: 12),
+          Expanded(
+            child: ListView(
+              padding: EdgeInsets.zero,
+              children: [
+                UserAccountsDrawerHeader(
+                  decoration: const BoxDecoration(color: AppTheme.blue),
+                  accountName: Text(session.nombre, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                  accountEmail: Text('RUT: ${AppTheme.formatRut(session.rut)}'),
+                  currentAccountPicture: CircleAvatar(
+                    backgroundColor: Colors.white,
+                    child: Text(
+                      session.nombre.isNotEmpty ? session.nombre[0].toUpperCase() : 'U',
+                      style: const TextStyle(fontSize: 24, color: AppTheme.blue, fontWeight: FontWeight.bold),
+                    ),
+                  ),
                 ),
-              ),
-            ),
-            ...session.centros.map((cId) {
-              return CenterListTile(
-                centroId: cId,
-                activeCentroId: session.centroId,
-                onTap: () async {
-                  await session.setActiveCentro(cId);
-                  if (!context.mounted) return;
-                  Navigator.pop(context);
-                  Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const HomeScreen()));
-                },
-              );
-            }).toList(),
-          ],
-
-          // Sección de invitaciones pendientes dentro del Drawer
-          StreamBuilder<DocumentSnapshot>(
-            stream: FirebaseFirestore.instance.collection('usuarios').doc(session.uid).snapshots(),
-            builder: (context, snapshot) {
-              if (!snapshot.hasData || !snapshot.data!.exists) {
-                return const SizedBox.shrink();
-              }
-              final data = snapshot.data!.data() as Map<String, dynamic>?;
-              final List<String> invitaciones = List<String>.from(data?['invitaciones'] ?? []);
-              if (invitaciones.isEmpty) {
-                return const SizedBox.shrink();
-              }
-
-              return Column(
-                children: [
+                if (session.isRealAdmin) ...[
+                  ListTile(
+                    leading: const Icon(Icons.people_alt_outlined, color: Colors.black87),
+                    title: const Text('Gestionar Cuidadores'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(context, MaterialPageRoute(builder: (context) => const AdminCuidadoresScreen()));
+                    },
+                  ),
                   const Divider(),
-                  Padding(
-                    padding: const EdgeInsets.only(left: 16.0, top: 10, bottom: 5),
+                  ListTile(
+                    leading: Icon(
+                      session.activeRole == 'admin' ? Icons.visibility_outlined : Icons.admin_panel_settings, 
+                      color: Colors.black87
+                    ),
+                    title: Text(session.activeRole == 'admin' ? 'Cambiar a vista Cuidador' : 'Volver a vista Admin'),
+                    subtitle: Text(
+                      session.activeRole == 'admin' ? 'Verás la app como un trabajador' : 'Recuperar controles de edición',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                    onTap: () async {
+                      Navigator.pop(context);
+                      String newRole = session.activeRole == 'admin' ? 'cuidador' : 'admin';
+                      await session.setActiveRole(newRole);
+                      
+                      if (!context.mounted) return;
+                      Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const HomeScreen()));
+                    },
+                  ),
+                ],
+                
+                if (session.centros.length > 1) ...[
+                  const Divider(),
+                  const Padding(
+                    padding: EdgeInsets.only(left: 16.0, top: 10, bottom: 5),
                     child: Align(
                       alignment: Alignment.centerLeft,
-                      child: Row(
-                        children: [
-                          const Text(
-                            'Nuevas Invitaciones',
-                            style: TextStyle(fontWeight: FontWeight.bold, color: AppTheme.green, fontSize: 12),
-                          ),
-                          const SizedBox(width: 6),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: AppTheme.green,
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Text(
-                              '${invitaciones.length}',
-                              style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
-                            ),
-                          )
-                        ],
+                      child: Text(
+                        'Centros Disponibles',
+                        style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey, fontSize: 12),
                       ),
                     ),
                   ),
-                  ...invitaciones.map((cId) {
-                    return FutureBuilder<DocumentSnapshot>(
-                      future: FirebaseFirestore.instance.collection('centros').doc(cId).get(),
-                      builder: (context, centerSnap) {
-                        String nombreCentro = session.getCenterName(cId);
-                        if (centerSnap.hasData && centerSnap.data!.exists) {
-                          final cData = centerSnap.data!.data() as Map<String, dynamic>?;
-                          final String fetchedName = cData?['nombre'] ?? cId;
-                          if (fetchedName != cId && fetchedName != nombreCentro) {
-                            nombreCentro = fetchedName;
-                            session.saveCenterName(cId, fetchedName);
-                          }
-                        }
-                        return ListTile(
-                          dense: true,
-                          leading: const Icon(Icons.mail_outline_rounded, color: AppTheme.green),
-                          title: Text(nombreCentro, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.black87)),
-                          subtitle: const Text('Toca para ver', style: TextStyle(fontSize: 11, color: Colors.black45)),
-                          onTap: () {
-                            showDialog(
-                              context: context,
-                              builder: (context) => AlertDialog(
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                                title: Text('Invitación de $nombreCentro', style: const TextStyle(fontWeight: FontWeight.bold)),
-                                content: Text('¿Deseas unirte al centro de cuidado "$nombreCentro"?'),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () async {
-                                      Navigator.pop(context);
-                                      await DatabaseService().rejectInvitation(session.uid, cId);
-                                    },
-                                    child: const Text('Rechazar', style: TextStyle(color: Colors.redAccent)),
+                  ...session.centros.map((cId) {
+                    return CenterListTile(
+                      centroId: cId,
+                      activeCentroId: session.centroId,
+                      onTap: () async {
+                        await session.setActiveCentro(cId);
+                        if (!context.mounted) return;
+                        Navigator.pop(context);
+                        Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const HomeScreen()));
+                      },
+                    );
+                  }).toList(),
+                ],
+
+                // Sección de invitaciones pendientes dentro del Drawer
+                StreamBuilder<DocumentSnapshot>(
+                  stream: FirebaseFirestore.instance.collection('usuarios').doc(session.uid).snapshots(),
+                  builder: (context, snapshot) {
+                    if (!snapshot.hasData || !snapshot.data!.exists) {
+                      return const SizedBox.shrink();
+                    }
+                    final data = snapshot.data!.data() as Map<String, dynamic>?;
+                    final List<String> invitaciones = List<String>.from(data?['invitaciones'] ?? []);
+                    if (invitaciones.isEmpty) {
+                      return const SizedBox.shrink();
+                    }
+
+                    return Column(
+                      children: [
+                        const Divider(),
+                        Padding(
+                          padding: const EdgeInsets.only(left: 16.0, top: 10, bottom: 5),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: Row(
+                              children: [
+                                const Text(
+                                  'Nuevas Invitaciones',
+                                  style: TextStyle(fontWeight: FontWeight.bold, color: AppTheme.green, fontSize: 12),
+                                ),
+                                const SizedBox(width: 6),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.green,
+                                    borderRadius: BorderRadius.circular(10),
                                   ),
-                                  ElevatedButton(
-                                    onPressed: () async {
-                                      Navigator.pop(context);
-                                      await DatabaseService().acceptInvitation(session.uid, cId);
-                                      // Cambiar automáticamente al nuevo centro aceptado
-                                      await session.setActiveCentro(cId);
-                                      if (context.mounted) {
-                                        Navigator.pop(context); // Cerrar el Drawer
-                                        Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const HomeScreen()));
-                                      }
-                                    },
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: AppTheme.green,
-                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                  child: Text(
+                                    '${invitaciones.length}',
+                                    style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                                  ),
+                                )
+                              ],
+                            ),
+                          ),
+                        ),
+                        ...invitaciones.map((cId) {
+                          return FutureBuilder<DocumentSnapshot>(
+                            future: FirebaseFirestore.instance.collection('centros').doc(cId).get(),
+                            builder: (context, centerSnap) {
+                              String nombreCentro = session.getCenterName(cId);
+                              if (centerSnap.hasData && centerSnap.data!.exists) {
+                                final cData = centerSnap.data!.data() as Map<String, dynamic>?;
+                                final String fetchedName = cData?['nombre'] ?? cId;
+                                if (fetchedName != cId && fetchedName != nombreCentro) {
+                                  nombreCentro = fetchedName;
+                                  session.saveCenterName(cId, fetchedName);
+                                }
+                              }
+                              return ListTile(
+                                dense: true,
+                                leading: const Icon(Icons.mail_outline_rounded, color: AppTheme.green),
+                                title: Text(nombreCentro, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.black87)),
+                                subtitle: const Text('Toca para ver', style: TextStyle(fontSize: 11, color: Colors.black45)),
+                                onTap: () {
+                                  showDialog(
+                                    context: context,
+                                    builder: (context) => AlertDialog(
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                      title: Text('Invitación de $nombreCentro', style: const TextStyle(fontWeight: FontWeight.bold)),
+                                      content: Text('¿Deseas unirte al centro de cuidado "$nombreCentro"?'),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () async {
+                                            Navigator.pop(context);
+                                            await DatabaseService().rejectInvitation(session.uid, cId);
+                                          },
+                                          child: const Text('Rechazar', style: TextStyle(color: Colors.redAccent)),
+                                        ),
+                                        ElevatedButton(
+                                          onPressed: () async {
+                                            Navigator.pop(context);
+                                            await DatabaseService().acceptInvitation(session.uid, cId);
+                                            // Cambiar automáticamente al nuevo centro aceptado
+                                            await session.setActiveCentro(cId);
+                                            if (context.mounted) {
+                                              Navigator.pop(context); // Cerrar el Drawer
+                                              Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const HomeScreen()));
+                                            }
+                                          },
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: AppTheme.green,
+                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                          ),
+                                          child: const Text('Aceptar', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                                        ),
+                                      ],
                                     ),
-                                    child: const Text('Aceptar', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                                  ),
-                                ],
+                                  );
+                                },
+                              );
+                            },
+                          );
+                        }).toList(),
+                      ],
+                    );
+                  },
+                ),
+
+                // Estado del Centro (resumen de pacientes y cuidadores en tiempo real)
+                FutureBuilder<DocumentSnapshot>(
+                  future: FirebaseFirestore.instance.collection('centros').doc(session.centroId).get(),
+                  builder: (context, centroSnap) {
+                    String nombreCentro = session.getCenterName(session.centroId);
+                    if (centroSnap.hasData && centroSnap.data!.exists) {
+                      final cData = centroSnap.data!.data() as Map<String, dynamic>?;
+                      final String fetchedName = cData?['nombre'] ?? session.centroId;
+                      if (fetchedName != session.centroId && fetchedName != nombreCentro) {
+                        nombreCentro = fetchedName;
+                        session.saveCenterName(session.centroId, fetchedName);
+                      }
+                    }
+                    return StreamBuilder<QuerySnapshot>(
+                      stream: FirebaseFirestore.instance.collection('pacientes').where('centroId', isEqualTo: session.centroId).snapshots(),
+                      builder: (context, pacientesSnap) {
+                        return StreamBuilder<QuerySnapshot>(
+                          stream: FirebaseFirestore.instance.collection('usuarios').where('centros', arrayContains: session.centroId).snapshots(),
+                          builder: (context, cuidadoresSnap) {
+                            final int totalPacientes = pacientesSnap.hasData ? pacientesSnap.data!.docs.length : 0;
+                            final int totalCuidadores = cuidadoresSnap.hasData ? cuidadoresSnap.data!.docs.length : 0;
+                            
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+                              child: Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.blue.withOpacity(0.05),
+                                  borderRadius: BorderRadius.circular(15),
+                                  border: Border.all(color: AppTheme.blue.withOpacity(0.1), width: 1),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Estado: $nombreCentro',
+                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: AppTheme.blue),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            const Icon(Icons.people_outline_rounded, size: 16, color: Colors.black54),
+                                            const SizedBox(width: 8),
+                                            const Text('Pacientes Activos', style: TextStyle(fontSize: 11, color: Colors.black54)),
+                                          ],
+                                        ),
+                                        Text(
+                                          '$totalPacientes',
+                                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.black87),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            const Icon(Icons.badge_outlined, size: 16, color: Colors.black54),
+                                            const SizedBox(width: 8),
+                                            const Text('Cuidadores Activos', style: TextStyle(fontSize: 11, color: Colors.black54)),
+                                          ],
+                                        ),
+                                        Text(
+                                          '$totalCuidadores',
+                                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.black87),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
                               ),
                             );
                           },
                         );
                       },
                     );
-                  }).toList(),
-                ],
-              );
-            },
-          ),
-
-          // Estado del Centro (resumen de pacientes y cuidadores en tiempo real)
-          FutureBuilder<DocumentSnapshot>(
-            future: FirebaseFirestore.instance.collection('centros').doc(session.centroId).get(),
-            builder: (context, centroSnap) {
-              String nombreCentro = session.getCenterName(session.centroId);
-              if (centroSnap.hasData && centroSnap.data!.exists) {
-                final cData = centroSnap.data!.data() as Map<String, dynamic>?;
-                final String fetchedName = cData?['nombre'] ?? session.centroId;
-                if (fetchedName != session.centroId && fetchedName != nombreCentro) {
-                  nombreCentro = fetchedName;
-                  session.saveCenterName(session.centroId, fetchedName);
-                }
-              }
-              return StreamBuilder<QuerySnapshot>(
-                stream: FirebaseFirestore.instance.collection('pacientes').where('centroId', isEqualTo: session.centroId).snapshots(),
-                builder: (context, pacientesSnap) {
-                  return StreamBuilder<QuerySnapshot>(
-                    stream: FirebaseFirestore.instance.collection('usuarios').where('centros', arrayContains: session.centroId).snapshots(),
-                    builder: (context, cuidadoresSnap) {
-                      final int totalPacientes = pacientesSnap.hasData ? pacientesSnap.data!.docs.length : 0;
-                      final int totalCuidadores = cuidadoresSnap.hasData ? cuidadoresSnap.data!.docs.length : 0;
-                      
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
-                        child: Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: AppTheme.blue.withOpacity(0.05),
-                            borderRadius: BorderRadius.circular(15),
-                            border: Border.all(color: AppTheme.blue.withOpacity(0.1), width: 1),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Estado: $nombreCentro',
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: AppTheme.blue),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              const SizedBox(height: 8),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Row(
-                                    children: [
-                                      const Icon(Icons.people_outline_rounded, size: 16, color: Colors.black54),
-                                      const SizedBox(width: 8),
-                                      const Text('Pacientes Activos', style: TextStyle(fontSize: 11, color: Colors.black54)),
-                                    ],
-                                  ),
-                                  Text(
-                                    '$totalPacientes',
-                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.black87),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 6),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Row(
-                                    children: [
-                                      const Icon(Icons.badge_outlined, size: 16, color: Colors.black54),
-                                      const SizedBox(width: 8),
-                                      const Text('Cuidadores Activos', style: TextStyle(fontSize: 11, color: Colors.black54)),
-                                    ],
-                                  ),
-                                  Text(
-                                    '$totalCuidadores',
-                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.black87),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                  );
-                },
-              );
-            },
-          ),
-
-          const Divider(),
-          ListTile(
-            leading: const Icon(Icons.help_outline_rounded, color: Colors.black87),
-            title: const Text('Soporte y Ayuda'),
-            onTap: () {
-              showDialog(
-                context: context,
-                builder: (context) => AlertDialog(
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                  title: const Text('Soporte de CuidaFlow', style: TextStyle(fontWeight: FontWeight.bold)),
-                  content: const Text(
-                    '¿Tienes dudas, problemas o sugerencias?\n\nEscríbenos a:\nsoporte@cuidaflow.com\n\n¡Estaremos listos para asistirte!',
-                    style: TextStyle(height: 1.4),
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('Cerrar', style: TextStyle(fontWeight: FontWeight.bold)),
-                    ),
-                  ],
+                  },
                 ),
-              );
-            },
+
+                const Divider(),
+                ListTile(
+                  leading: const Icon(Icons.help_outline_rounded, color: Colors.black87),
+                  title: const Text('Soporte y Ayuda'),
+                  onTap: () {
+                    showDialog(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                        title: const Text('Soporte de CuidaFlow', style: TextStyle(fontWeight: FontWeight.bold)),
+                        content: const Text(
+                          '¿Tienes dudas, problemas o sugerencias?\n\nEscríbenos a:\nsoporte@cuidaflow.com\n\n¡Estaremos listos para asistirte!',
+                          style: TextStyle(height: 1.4),
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: const Text('Cerrar', style: TextStyle(fontWeight: FontWeight.bold)),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
           ),
           
-          const Spacer(),
-          const Divider(),
+          const Divider(height: 1),
           ListTile(
             leading: const Icon(Icons.logout, color: Colors.redAccent),
             title: const Text('Cerrar Sesión', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
@@ -750,6 +765,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       onPressed: () async {
                         Navigator.pop(context); // Cerrar diálogo
+                        await Provider.of<SessionProvider>(context, listen: false).clear();
                         await AuthService().signOut();
                         if (!context.mounted) return;
                         Navigator.pop(context); // Cerrar el Drawer
@@ -779,7 +795,15 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final session = SessionService();
+    final session = context.watch<SessionProvider>();
+
+    if (session.uid.isEmpty || session.centroId.isEmpty) {
+      return const Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(color: AppTheme.blue),
+        ),
+      );
+    }
 
     return Scaffold(
       backgroundColor: Colors.grey.shade100,
@@ -788,10 +812,14 @@ class _HomeScreenState extends State<HomeScreen> {
         title: FutureBuilder<DocumentSnapshot>(
           future: FirebaseFirestore.instance.collection('centros').doc(session.centroId).get(),
           builder: (context, snapshot) {
-            String nombreCentro = 'Cargando centro...';
+            String nombreCentro = session.getCenterName(session.centroId);
             if (snapshot.hasData && snapshot.data!.exists) {
               final data = snapshot.data!.data() as Map<String, dynamic>?;
-              nombreCentro = data?['nombre'] ?? session.centroId;
+              final String fetchedName = data?['nombre'] ?? session.centroId;
+              if (fetchedName != session.centroId && fetchedName != nombreCentro) {
+                nombreCentro = fetchedName;
+                session.saveCenterName(session.centroId, fetchedName);
+              }
             }
             return Column(
               mainAxisSize: MainAxisSize.min,
@@ -900,6 +928,22 @@ class _HomeScreenState extends State<HomeScreen> {
                 }
 
                 final isOffline = snapshot.hasData && snapshot.data!.metadata.isFromCache;
+                if (isOffline) {
+                  if (_offlineTimer == null && !_showOfflineNotifier.value) {
+                    _offlineTimer = Timer(const Duration(seconds: 3), () {
+                      _showOfflineNotifier.value = true;
+                    });
+                  }
+                } else {
+                  _offlineTimer?.cancel();
+                  _offlineTimer = null;
+                  if (_showOfflineNotifier.value) {
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      _showOfflineNotifier.value = false;
+                    });
+                  }
+                }
+
                 final offlineBanner = Container(
                   width: double.infinity,
                   color: Colors.orange.shade100,
@@ -914,10 +958,18 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 );
 
+                final offlineBannerWidget = ValueListenableBuilder<bool>(
+                  valueListenable: _showOfflineNotifier,
+                  builder: (context, showOffline, child) {
+                    if (!showOffline) return const SizedBox.shrink();
+                    return offlineBanner;
+                  },
+                );
+
                 if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
                   return Column(
                     children: [
-                      if (isOffline) offlineBanner,
+                      offlineBannerWidget,
                       const Expanded(child: Center(child: Text('No hay pacientes registrados.', style: TextStyle(color: Colors.black54, fontSize: 16)))),
                     ],
                   );
@@ -925,17 +977,15 @@ class _HomeScreenState extends State<HomeScreen> {
 
                 var docs = snapshot.data!.docs;
 
-                if (session.activeRole == 'cuidador') {
-                  final List<String> currentIds = docs.map((d) => d.id).toList();
-                  final bool listsAreEqual = _lastSyncedPatientIds != null &&
-                      _lastSyncedPatientIds!.length == currentIds.length &&
-                      _lastSyncedPatientIds!.every((id) => currentIds.contains(id));
+                final List<String> currentIds = docs.map((d) => d.id).toList();
+                final bool listsAreEqual = _lastSyncedPatientIds != null &&
+                    _lastSyncedPatientIds!.length == currentIds.length &&
+                    _lastSyncedPatientIds!.every((id) => currentIds.contains(id));
 
-                  if (!listsAreEqual) {
-                    _lastSyncedPatientIds = currentIds;
-                  }
-                  _updateTaskSubscriptions(session.uid, docs);
+                if (!listsAreEqual) {
+                  _lastSyncedPatientIds = currentIds;
                 }
+                _updateTaskSubscriptions(session.uid, docs);
 
                 if (_searchQuery.isNotEmpty) {
                   String queryNormalized = _removeDiacritics(_searchQuery.toLowerCase());
@@ -974,7 +1024,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
                 return Column(
                   children: [
-                    if (isOffline) offlineBanner,
+                    offlineBannerWidget,
                     mainContent,
                   ],
                 );
@@ -987,7 +1037,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildPatientCard(BuildContext context, {required String patientId, required String initials, required String name, required String details, required String status}) {
-    final session = SessionService();
+    final session = context.read<SessionProvider>();
 
     Widget card = InkWell(
       onTap: () {
@@ -1126,7 +1176,7 @@ class CenterListTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final session = SessionService();
+    final session = context.watch<SessionProvider>();
     final isSelected = centroId == activeCentroId;
     return FutureBuilder<DocumentSnapshot>(
       future: FirebaseFirestore.instance.collection('centros').doc(centroId).get(),

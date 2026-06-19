@@ -1,10 +1,11 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:provider/provider.dart';
 import '../../core/theme.dart';
 import '../../services/database_service.dart';
-import '../../services/session_service.dart';
 import '../../services/auth_service.dart';
+import '../../providers/session_provider.dart';
 import 'home_screen.dart';
 import 'login_screen.dart';
 
@@ -23,7 +24,8 @@ class _NoCentroScreenState extends State<NoCentroScreen> {
   void initState() {
     super.initState();
     // Escuchar cambios en el usuario para redirigir al Home si es aceptado en algún centro
-    final uid = SessionService().uid;
+    final sessionProvider = Provider.of<SessionProvider>(context, listen: false);
+    final uid = sessionProvider.uid;
     if (uid.isNotEmpty) {
       _userSubscription = FirebaseFirestore.instance
           .collection('usuarios')
@@ -48,7 +50,7 @@ class _NoCentroScreenState extends State<NoCentroScreen> {
               }
             }
 
-            await SessionService().initialize(
+            await sessionProvider.initialize(
               uid: uid,
               nombre: data['nombre'] ?? data['name'] ?? '',
               rut: data['rut'] ?? '',
@@ -76,6 +78,7 @@ class _NoCentroScreenState extends State<NoCentroScreen> {
   }
 
   Future<void> _handleLogout() async {
+    await Provider.of<SessionProvider>(context, listen: false).clear();
     await AuthService().signOut();
     if (!mounted) return;
     Navigator.pushAndRemoveUntil(
@@ -87,8 +90,16 @@ class _NoCentroScreenState extends State<NoCentroScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final session = SessionService();
+    final session = context.watch<SessionProvider>();
     final String uid = session.uid;
+
+    if (uid.isEmpty) {
+      return const Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(color: AppTheme.blue),
+        ),
+      );
+    }
 
     return Scaffold(
       backgroundColor: Colors.grey.shade100,
