@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'home_screen.dart';
+import 'no_centro_screen.dart';
 import '../../core/theme.dart';
 import '../../services/auth_service.dart';
 import '../../services/session_service.dart';
@@ -47,10 +48,17 @@ class _LoginScreenState extends State<LoginScreen> {
       final hasCachedSession = await SessionService().loadSession();
       if (hasCachedSession) {
         if (!mounted) return;
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const HomeScreen()),
-        );
+        if (SessionService().centros.isEmpty) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => const NoCentroScreen()),
+          );
+        } else {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => const HomeScreen()),
+          );
+        }
         return;
       }
 
@@ -63,26 +71,55 @@ class _LoginScreenState extends State<LoginScreen> {
           List<String> centros = [];
           if (data.containsKey('centros')) {
             centros = List<String>.from(data['centros']);
-          } else if (data.containsKey('centroId')) {
+          } else if (data.containsKey('centroId') && data['centroId'] != null && data['centroId'].toString().isNotEmpty) {
             centros = [data['centroId']];
           }
 
-          if (centros.isNotEmpty) {
-            await SessionService().initialize(
-              uid: user.uid,
-              nombre: data['nombre'] ?? data['name'] ?? '',
-              rut: data['rut'] ?? '',
-              rol: data['rol'] ?? '',
-              centroId: centros.first,
-              centros: centros,
+          Map<String, String> rolesMap = {};
+          if (data.containsKey('roles') && data['roles'] != null) {
+            final Map<String, dynamic> rawRoles = data['roles'] as Map<String, dynamic>;
+            rolesMap = rawRoles.map((key, value) => MapEntry(key, value.toString()));
+          }
+
+          if (rolesMap.isEmpty) {
+            final String legacyRol = data['rol'] ?? 'cuidador';
+            if (centros.isNotEmpty) {
+              for (final c in centros) {
+                rolesMap[c] = legacyRol;
+              }
+            } else {
+              rolesMap[''] = legacyRol;
+            }
+          }
+
+          await SessionService().initialize(
+            uid: user.uid,
+            nombre: data['nombre'] ?? data['name'] ?? '',
+            rut: data['rut'] ?? '',
+            rol: rolesMap[centros.isNotEmpty ? centros.first : ''] ?? data['rol'] ?? 'cuidador',
+            centroId: centros.isNotEmpty ? centros.first : '',
+            centros: centros,
+            roles: rolesMap,
+          );
+
+          if (!mounted) return;
+
+          if (data['mustChangePassword'] == true) {
+            await _showForceChangePasswordDialog(context, user.uid);
+          }
+
+          if (!mounted) return;
+
+          if (centros.isEmpty) {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (context) => const NoCentroScreen()),
             );
-            if (!mounted) return;
+          } else {
             Navigator.pushReplacement(
               context,
               MaterialPageRoute(builder: (context) => const HomeScreen()),
             );
-          } else {
-            await _authService.signOut();
           }
         } else {
           await _authService.signOut();
@@ -93,6 +130,120 @@ class _LoginScreenState extends State<LoginScreen> {
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  Future<void> _showForceChangePasswordDialog(BuildContext context, String uid) async {
+    final TextEditingController passCtrl1 = TextEditingController();
+    final TextEditingController passCtrl2 = TextEditingController();
+    bool isSaving = false;
+
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return WillPopScope(
+          onWillPop: () async => false,
+          child: StatefulBuilder(
+            builder: (context, setStateDialog) {
+              return AlertDialog(
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                title: const Text('Actualizar Contraseña', style: TextStyle(fontWeight: FontWeight.bold)),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      'Es necesario que cambies tu contraseña temporal para continuar.',
+                      style: TextStyle(fontSize: 14, color: Colors.black54),
+                    ),
+                    const SizedBox(height: 15),
+                    TextField(
+                      controller: passCtrl1,
+                      obscureText: true,
+                      enabled: !isSaving,
+                      decoration: const InputDecoration(labelText: 'Nueva Contraseña'),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: passCtrl2,
+                      obscureText: true,
+                      enabled: !isSaving,
+                      decoration: const InputDecoration(labelText: 'Confirmar Contraseña'),
+                    ),
+                    if (isSaving) ...[
+                      const SizedBox(height: 20),
+                      const CircularProgressIndicator(color: AppTheme.blue),
+                    ]
+                  ],
+                ),
+                actions: isSaving
+                    ? []
+                    : [
+                        ElevatedButton(
+                          onPressed: () async {
+                            final p1 = passCtrl1.text.trim();
+                            final p2 = passCtrl2.text.trim();
+                            if (p1.isEmpty || p2.isEmpty) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Por favor completa todos los campos')),
+                              );
+                              return;
+                            }
+                            if (p1.length < 6) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('La contraseña debe tener al menos 6 caracteres')),
+                              );
+                              return;
+                            }
+                            if (p1 != p2) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Las contraseñas no coinciden')),
+                              );
+                              return;
+                            }
+
+                            setStateDialog(() => isSaving = true);
+                            try {
+                              final user = FirebaseAuth.instance.currentUser;
+                              if (user != null) {
+                                await user.updatePassword(p1);
+                                await FirebaseFirestore.instance
+                                    .collection('usuarios')
+                                    .doc(uid)
+                                    .update({'mustChangePassword': false});
+                                if (!dialogContext.mounted) return;
+                                Navigator.pop(dialogContext);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Contraseña actualizada con éxito'),
+                                    backgroundColor: Colors.green,
+                                  ),
+                                );
+                              }
+                            } catch (e) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Error al cambiar contraseña: $e'),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            } finally {
+                              setStateDialog(() => isSaving = false);
+                            }
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.green,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          child: const Text('Actualizar Contraseña',
+                              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                        ),
+                      ],
+              );
+            },
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _handleLogin() async {
@@ -115,11 +266,31 @@ class _LoginScreenState extends State<LoginScreen> {
       } catch (_) {}
 
       if (!mounted) return;
-      
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const HomeScreen()),
-      );
+
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        final doc = await FirebaseFirestore.instance.collection('usuarios').doc(user.uid).get();
+        if (doc.exists) {
+          final userData = doc.data() as Map<String, dynamic>;
+          if (userData['mustChangePassword'] == true) {
+            await _showForceChangePasswordDialog(context, user.uid);
+          }
+        }
+      }
+
+      if (!mounted) return;
+
+      if (SessionService().centros.isEmpty) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const NoCentroScreen()),
+        );
+      } else {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const HomeScreen()),
+        );
+      }
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

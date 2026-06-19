@@ -68,7 +68,7 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
     final bool canAssignSelf = !alreadyAssignedUids.contains(adminUid);
 
     final unassigned = allCaregivers
-        .where((doc) => !alreadyAssignedUids.contains(doc.id))
+        .where((doc) => !alreadyAssignedUids.contains(doc.id) && doc.id != adminUid)
         .toList();
 
     showDialog(
@@ -1025,7 +1025,7 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
         }
 
         final data = snapshot.data!.data() as Map<String, dynamic>;
-        
+        final status = data['status']?.toString() ?? 'Estable';
         final bloodType = data['bloodType']?.toString().isNotEmpty == true ? data['bloodType'] : 'No registrado';
         final allergies = data['allergies']?.toString().isNotEmpty == true ? data['allergies'] : 'No registradas';
         final pathologies = data['pathologies']?.toString().isNotEmpty == true ? data['pathologies'] : 'No registradas';
@@ -1036,6 +1036,26 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
         return ListView(
           padding: const EdgeInsets.all(20.0),
           children: [
+            _buildMedicalInfoCard(
+              title: 'Estado de Salud',
+              icon: Icons.health_and_safety_rounded,
+              color: AppTheme.blue,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    _buildDetailStatusBadge(status),
+                    TextButton.icon(
+                      onPressed: () => _showChangeStatusDialog(context, status),
+                      icon: const Icon(Icons.edit, color: AppTheme.blue, size: 16),
+                      label: const Text('Cambiar Estado', style: TextStyle(color: AppTheme.blue, fontWeight: FontWeight.bold)),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 15),
+
             if (session.isAdmin)
               Align(
                 alignment: Alignment.centerRight,
@@ -1455,6 +1475,76 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
               },
             );
           },
+        );
+      },
+    );
+  }
+
+  Widget _buildDetailStatusBadge(String status) {
+    Color bgColor;
+    Color textColor;
+    String lowerStatus = status.toLowerCase();
+
+    if (lowerStatus == 'estable') {
+      bgColor = const Color(0xFFE8F5E9);
+      textColor = const Color(0xFF2E7D32);
+    } else if (lowerStatus == 'atención' || lowerStatus == 'atencion') {
+      bgColor = const Color(0xFFFFF3E0);
+      textColor = const Color(0xFFEF6C00);
+    } else {
+      bgColor = Colors.grey.shade200;
+      textColor = Colors.grey.shade700;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+      decoration: BoxDecoration(color: bgColor, borderRadius: BorderRadius.circular(12)),
+      child: Text(
+        status.toUpperCase(),
+        style: TextStyle(color: textColor, fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 0.5),
+      ),
+    );
+  }
+
+  void _showChangeStatusDialog(BuildContext context, String currentStatus) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text('Cambiar Estado de Salud', style: TextStyle(fontWeight: FontWeight.bold)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.check_circle_outline, color: Colors.green),
+                title: const Text('Estable', style: TextStyle(fontWeight: FontWeight.bold)),
+                trailing: currentStatus.toLowerCase() == 'estable' ? const Icon(Icons.check, color: Colors.green) : null,
+                onTap: () async {
+                  await FirebaseFirestore.instance.collection('pacientes').doc(widget.patientId).update({
+                    'status': 'Estable',
+                  });
+                  if (!context.mounted) return;
+                  Navigator.pop(context);
+                },
+              ),
+              const Divider(),
+              ListTile(
+                leading: const Icon(Icons.warning_amber_rounded, color: Colors.orange),
+                title: const Text('Atención Requerida', style: TextStyle(fontWeight: FontWeight.bold)),
+                trailing: (currentStatus.toLowerCase() == 'atención' || currentStatus.toLowerCase() == 'atencion')
+                    ? const Icon(Icons.check, color: Colors.orange)
+                    : null,
+                onTap: () async {
+                  await FirebaseFirestore.instance.collection('pacientes').doc(widget.patientId).update({
+                    'status': 'Atención',
+                  });
+                  if (!context.mounted) return;
+                  Navigator.pop(context);
+                },
+              ),
+            ],
+          ),
         );
       },
     );

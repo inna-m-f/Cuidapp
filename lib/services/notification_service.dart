@@ -398,4 +398,31 @@ class NotificationService {
       debugPrint('Error al sincronizar alarmas: $e');
     }
   }
+
+  static Future<void> showImmediateNotification({
+    required int id,
+    required String title,
+    required String body,
+  }) async {
+    if (kIsWeb) return;
+    const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
+      'invitations_channel',
+      'Invitaciones a Centros',
+      channelDescription: 'Notificaciones sobre invitaciones a nuevos centros.',
+      importance: Importance.max,
+      priority: Priority.high,
+      playSound: true,
+      enableVibration: true,
+    );
+    const DarwinNotificationDetails iosDetails = DarwinNotificationDetails(
+      presentAlert: true,
+      presentSound: true,
+    );
+    await _notifications.show(
+      id: id,
+      title: title,
+      body: body,
+      notificationDetails: const NotificationDetails(android: androidDetails, iOS: iosDetails),
+    );
+  }
 }

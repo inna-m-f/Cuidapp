@@ -62,7 +62,6 @@ class DatabaseService {
       'details': details,
       'initials': initials.toUpperCase().trim(),
       'status': 'Estable',
-      'progressChips': [],
       'asignaciones': [],
       'fechaIngreso': FieldValue.serverTimestamp(),
       'bloodType': '',
@@ -123,7 +122,6 @@ class DatabaseService {
   Stream<QuerySnapshot> getCuidadoresStream(String centroId) {
     return _db
         .collection('usuarios')
-        .where('rol', isEqualTo: 'cuidador')
         .where('centros', arrayContains: centroId)
         .snapshots();
   }
@@ -156,15 +154,112 @@ class DatabaseService {
         'rut': cleanRut,
         'nombre': nombre,
         'email': email.trim(),
-        'rol': 'cuidador',
+        'roles': {centroId: 'cuidador'},
         'centros': [centroId], 
-        'centroId': centroId, 
+        'centroId': centroId,
+        'mustChangePassword': true,
+        'invitaciones': [],
         'fechaCreacion': FieldValue.serverTimestamp(),
       });
 
       await tempAuth.signOut();
     } finally {
       await tempApp.delete();
+    }
+  }
+
+  Future<DocumentSnapshot?> findUserByRut(String rut) async {
+    final String cleanRut = rut.replaceAll('.', '').replaceAll('-', '').trim();
+    if (cleanRut.isEmpty) return null;
+    final QuerySnapshot result = await _db
+        .collection('usuarios')
+        .where('rut', isEqualTo: cleanRut)
+        .limit(1)
+        .get();
+    if (result.docs.isNotEmpty) {
+      return result.docs.first;
+    }
+    return null;
+  }
+
+  Future<void> inviteUserToCentro(String uid, String centroId) async {
+    await _db.collection('usuarios').doc(uid).update({
+      'invitaciones': FieldValue.arrayUnion([centroId]),
+    });
+  }
+
+  Future<void> acceptInvitation(String uid, String centroId) async {
+    await _db.collection('usuarios').doc(uid).update({
+      'centros': FieldValue.arrayUnion([centroId]),
+      'centroId': centroId,
+      'roles.$centroId': 'cuidador',
+      'invitaciones': FieldValue.arrayRemove([centroId]),
+    });
+  }
+
+  Future<void> rejectInvitation(String uid, String centroId) async {
+    await _db.collection('usuarios').doc(uid).update({
+      'invitaciones': FieldValue.arrayRemove([centroId]),
+    });
+  }
+
+  Future<void> removeUserFromCentro(String uid, String centroId) async {
+    final DocumentReference docRef = _db.collection('usuarios').doc(uid);
+    await _db.runTransaction((transaction) async {
+      final DocumentSnapshot snapshot = await transaction.get(docRef);
+      if (!snapshot.exists) return;
+      final Map<String, dynamic> data = snapshot.data() as Map<String, dynamic>;
+      
+      final List<String> centros = List<String>.from(data['centros'] ?? []);
+      centros.remove(centroId);
+      
+      final Map<String, dynamic> roles = Map<String, dynamic>.from(data['roles'] ?? {});
+      roles.remove(centroId);
+      
+      String newActiveCentroId = data['centroId'] ?? '';
+      if (newActiveCentroId == centroId) {
+        newActiveCentroId = centros.isNotEmpty ? centros.first : '';
+      }
+      
+      transaction.update(docRef, {
+        'centros': centros,
+        'roles': roles,
+        'centroId': newActiveCentroId,
+      });
+    });
+
+    // Limpiar asignaciones del cuidador desvinculado en los pacientes del centro
+    try {
+      final QuerySnapshot patientsQuery = await _db
+          .collection('pacientes')
+          .where('centroId', isEqualTo: centroId)
+          .get();
+
+      final WriteBatch patientBatch = _db.batch();
+      bool hasUpdates = false;
+
+      for (final doc in patientsQuery.docs) {
+        final pData = doc.data() as Map<String, dynamic>;
+        final List<String> asignaciones = List<String>.from(pData['asignaciones'] ?? []);
+        
+        // Buscar cualquier asignación que termine con "_$uid"
+        final List<String> toRemove = asignaciones
+            .where((asig) => asig.endsWith('_$uid'))
+            .toList();
+
+        if (toRemove.isNotEmpty) {
+          patientBatch.update(doc.reference, {
+            'asignaciones': FieldValue.arrayRemove(toRemove),
+          });
+          hasUpdates = true;
+        }
+      }
+
+      if (hasUpdates) {
+        await patientBatch.commit();
+      }
+    } catch (e) {
+      // Registrar silenciosamente o manejar error si es necesario
     }
   }
 

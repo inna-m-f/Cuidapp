@@ -30,13 +30,27 @@ class AuthService {
       List<String> centros = [];
       if (data.containsKey('centros')) {
         centros = List<String>.from(data['centros']);
-      } else if (data.containsKey('centroId')) {
+      } else if (data.containsKey('centroId') && data['centroId'] != null && data['centroId'].toString().isNotEmpty) {
         centros = [data['centroId']];
       }
 
-      if (centros.isEmpty) {
-        await signOut();
-        throw 'No tienes centros asignados.';
+      // Procesar mapa de roles por centro
+      Map<String, String> rolesMap = {};
+      if (data.containsKey('roles') && data['roles'] != null) {
+        final Map<String, dynamic> rawRoles = data['roles'] as Map<String, dynamic>;
+        rolesMap = rawRoles.map((key, value) => MapEntry(key, value.toString()));
+      }
+
+      // Retrocompatibilidad para roles
+      if (rolesMap.isEmpty) {
+        final String legacyRol = data['rol'] ?? 'cuidador';
+        if (centros.isNotEmpty) {
+          for (final c in centros) {
+            rolesMap[c] = legacyRol;
+          }
+        } else {
+          rolesMap[''] = legacyRol;
+        }
       }
 
       // 4. Inicializar el SessionService con la información obtenida
@@ -44,9 +58,10 @@ class AuthService {
         uid: uid,
         nombre: data['nombre'] ?? data['name'] ?? '',
         rut: data['rut'] ?? '',
-        rol: data['rol'] ?? '',
-        centroId: centros.first,
+        rol: rolesMap[centros.isNotEmpty ? centros.first : ''] ?? data['rol'] ?? 'cuidador',
+        centroId: centros.isNotEmpty ? centros.first : '',
         centros: centros,
+        roles: rolesMap,
       );
 
       return data;

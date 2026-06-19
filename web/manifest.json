@@ -1,6 +1,6 @@
 {
-    "name": "cuidapp",
-    "short_name": "cuidapp",
+    "name": "CuidaFlow",
+    "short_name": "CuidaFlow",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

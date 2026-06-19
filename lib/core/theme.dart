@@ -6,6 +6,26 @@ class AppTheme {
   static const Color blue = Color(0xFF0E51D7);
   static const Color green = Color(0xFF47C869);
 
+  static String formatRut(String rut) {
+    if (rut.isEmpty) return rut;
+    final String cleaned = rut.replaceAll('.', '').replaceAll('-', '').replaceAll(' ', '').toUpperCase();
+    if (cleaned.length < 2) return cleaned;
+    final String dv = cleaned.substring(cleaned.length - 1);
+    final String number = cleaned.substring(0, cleaned.length - 1);
+    
+    String formattedNumber = '';
+    int count = 0;
+    for (int i = number.length - 1; i >= 0; i--) {
+      formattedNumber = number[i] + formattedNumber;
+      count++;
+      if (count == 3 && i > 0) {
+        formattedNumber = '.' + formattedNumber;
+        count = 0;
+      }
+    }
+    return '$formattedNumber-$dv';
+  }
+
   static ThemeData get theme {
     final baseTextTheme = ThemeData.light().textTheme;
 
@@ -40,7 +60,7 @@ class AppTheme {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(25),
           ),
-          padding: const EdgeInsets.symmetric(vertical: 16),
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
           textStyle: GoogleFonts.outfit(
             fontWeight: FontWeight.bold,
             fontSize: 16,
