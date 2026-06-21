@@ -304,32 +304,33 @@ class DatabaseService {
     });
   }
 
-  Future<String> addTask({
-    required String patientId,
-    required String title,
-    required String time,
-    required String category,
-    required List<String> diasSemana,
-  }) async {
-    final DocumentReference docRef = await _db
-        .collection('pacientes')
-        .doc(patientId)
-        .collection('tareas')
-        .add({
-      'title': title.trim(),
-      'time': time.trim(),
-      'category': category.trim(),
-      'diasSemana': diasSemana,
-      'isCompleted': false,
-      'completedBy': null,
-      'completedAt': null,
-      'completedDates': {},
-      'completedByDates': {},
-      'completedAtDates': {},
-      'fechaCreacion': FieldValue.serverTimestamp(),
-    });
-    return docRef.id;
-  }
+Future<String> addTask({
+  required String patientId,
+  required String title,
+  required String time,
+  required String category,
+  required List<String> diasSemana,
+  String repeatType = 'weekly_days',
+  int? repeatEveryDays,
+  DateTime? startDate,
+}) async {
+  final docRef = await FirebaseFirestore.instance
+      .collection('patients')
+      .doc(patientId)
+      .collection('tasks')
+      .add({
+        'title': title,
+        'time': time,
+        'category': category,
+        'diasSemana': diasSemana,
+        'repeatType': repeatType,
+        'repeatEveryDays': repeatEveryDays,
+        'startDate': Timestamp.fromDate(startDate ?? DateTime.now()),
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+  return docRef.id;
+}
 
   // NUEVO: Método para actualizar tareas
   Future<void> updateTaskData(String patientId, String taskId, Map<String, dynamic> data) async {

@@ -243,22 +243,62 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
     }
   }
 
-  bool _isTaskScheduledForToday(Map<String, dynamic> data) {
-    final List<String> diasSemana = List<String>.from(data['diasSemana'] ?? []);
-    final String hoy = _getDiaSemanaActual();
-    
-    final normalizedDias = diasSemana.map((d) {
-      return d.trim().toLowerCase()
-          .replaceAll('á', 'a')
-          .replaceAll('é', 'e')
-          .replaceAll('í', 'i')
-          .replaceAll('ó', 'o')
-          .replaceAll('ú', 'u');
-    }).toList();
 
-    return normalizedDias.contains(hoy);
+ bool _isTaskScheduledForToday(Map<String, dynamic> data) {
+  final String repeatType = data['repeatType']?.toString() ?? 'weekly_days';
+
+  final DateTime now = DateTime.now();
+  final DateTime today = DateTime(now.year, now.month, now.day);
+
+  DateTime startDate = today;
+  final rawStartDate = data['startDate'];
+
+  if (rawStartDate is Timestamp) {
+    final parsed = rawStartDate.toDate();
+    startDate = DateTime(parsed.year, parsed.month, parsed.day);
+  } else if (rawStartDate is String) {
+    final parsed = DateTime.tryParse(rawStartDate);
+    if (parsed != null) {
+      startDate = DateTime(parsed.year, parsed.month, parsed.day);
+    }
   }
 
+  switch (repeatType) {
+    case 'once':
+      return today.isAtSameMomentAs(startDate);
+
+    case 'daily':
+      return true;
+
+    case 'every_n_days':
+      final int repeatEveryDays = data['repeatEveryDays'] is int
+          ? data['repeatEveryDays']
+          : int.tryParse(data['repeatEveryDays']?.toString() ?? '') ?? 0;
+
+      if (repeatEveryDays <= 0) return false;
+
+      final int difference = today.difference(startDate).inDays;
+      return difference >= 0 && difference % repeatEveryDays == 0;
+
+    case 'weekly_days':
+    default:
+      final List<String> diasSemana = List<String>.from(data['diasSemana'] ?? []);
+      final String hoy = _getDiaSemanaActual();
+
+      final normalizedDias = diasSemana.map((d) {
+        return d
+            .trim()
+            .toLowerCase()
+            .replaceAll('á', 'a')
+            .replaceAll('é', 'e')
+            .replaceAll('í', 'i')
+            .replaceAll('ó', 'o')
+            .replaceAll('ú', 'u');
+      }).toList();
+
+      return normalizedDias.contains(hoy);
+  }
+}
   String? _completedByToday(Map<String, dynamic> data) {
     final fechaActual = _dbService.getFechaActualKey();
     final completedByDates = data['completedByDates'];
@@ -333,11 +373,15 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
   void _showAddTaskDialog() {
     final TextEditingController titleCtrl = TextEditingController();
 
-    String selectedCategory = 'Medicamentos';
-    String selectedHour = '12';
-    String selectedMinute = '00';
-    String selectedPeriod = 'AM';
-    String selectedMeal = 'Almuerzo';
+  String selectedCategory = 'Medicamentos';
+  String selectedHour = '12';
+  String selectedMinute = '00';
+  String selectedPeriod = 'AM';
+  String selectedMeal = 'Almuerzo';
+
+  String repeatType = 'weekly_days';
+  int repeatEveryDays = 2;
+  final DateTime startDate = DateTime.now();
 
     final List<String> categories = ['Medicamentos', 'Alimentación', 'Higiene', 'Salidas / Visitas'];
     final List<String> mealOptions = ['Almuerzo', 'Colación', 'Once', 'Cena'];
@@ -350,11 +394,19 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
       {'label': 'Sábado', 'value': 'sabado'},
       {'label': 'Domingo', 'value': 'domingo'},
     ];
+    
 
     final Set<String> selectedDays = {'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo'};
     final List<String> hours = List.generate(12, (index) => '${index + 1}');
     final List<String> minutes = List.generate(60, (index) => index.toString().padLeft(2, '0'));
+    final List<Map<String, String>> repeatOptions = [
+  {'label': 'Una sola vez', 'value': 'once'},
+  {'label': 'Todos los días', 'value': 'daily'},
+  {'label': 'Días específicos', 'value': 'weekly_days'},
+  {'label': 'Cada cierto número de días', 'value': 'every_n_days'},
+];
 
+final List<int> repeatEveryOptions = [2, 3, 4, 5, 7, 14, 30];
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -504,29 +556,100 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                       const SizedBox(height: 10),
                       Text('Horario seleccionado: $selectedHour:$selectedMinute $selectedPeriod', style: const TextStyle(fontSize: 13, color: Colors.black54, fontWeight: FontWeight.w600)),
                       const SizedBox(height: 18),
-                      const Text('Días de repetición', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.black87)),
-                      const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 8, runSpacing: 8,
-                        children: weekDays.map((day) {
-                          final label = day['label']!;
-                          final value = day['value']!;
-                          final isSelected = selectedDays.contains(value);
+                      const Text('Patrón de repetición', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.black87)),
+const SizedBox(height: 8),
+DropdownButtonFormField<String>(
+  value: repeatType,
+  decoration: InputDecoration(
+    filled: true,
+    fillColor: Colors.grey.shade100,
+    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+    border: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(16),
+      borderSide: BorderSide.none,
+    ),
+  ),
+  items: repeatOptions.map((option) {
+    return DropdownMenuItem(
+      value: option['value'],
+      child: Text(option['label']!),
+    );
+  }).toList(),
+  onChanged: (value) {
+    if (value == null) return;
+    setModalState(() {
+      repeatType = value;
+    });
+  },
+),
 
-                          return FilterChip(
-                            label: Text(label), selected: isSelected,
-                            selectedColor: const Color(0xFF00C853).withOpacity(0.18),
-                            checkmarkColor: const Color(0xFF00C853),
-                            labelStyle: TextStyle(color: isSelected ? const Color(0xFF00A86B) : Colors.black54, fontWeight: FontWeight.w700),
-                            side: BorderSide(color: isSelected ? const Color(0xFF00C853) : Colors.grey.shade300),
-                            onSelected: (selected) {
-                              setModalState(() {
-                                if (selected) { selectedDays.add(value); } else { selectedDays.remove(value); }
-                              });
-                            },
-                          );
-                        }).toList(),
-                      ),
+if (repeatType == 'every_n_days') ...[
+  const SizedBox(height: 14),
+  const Text('Repetir cada', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.black87)),
+  const SizedBox(height: 8),
+  DropdownButtonFormField<int>(
+    value: repeatEveryDays,
+    decoration: InputDecoration(
+      filled: true,
+      fillColor: Colors.grey.shade100,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide.none,
+      ),
+    ),
+    items: repeatEveryOptions.map((days) {
+      return DropdownMenuItem(
+        value: days,
+        child: Text('Cada $days días'),
+      );
+    }).toList(),
+    onChanged: (value) {
+      if (value == null) return;
+      setModalState(() {
+        repeatEveryDays = value;
+      });
+    },
+  ),
+],
+
+if (repeatType == 'weekly_days') ...[
+  const SizedBox(height: 14),
+  const Text('Días de repetición', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.black87)),
+  const SizedBox(height: 8),
+  Wrap(
+    spacing: 8,
+    runSpacing: 8,
+    children: weekDays.map((day) {
+      final label = day['label']!;
+      final value = day['value']!;
+      final isSelected = selectedDays.contains(value);
+
+      return FilterChip(
+        label: Text(label),
+        selected: isSelected,
+        selectedColor: const Color(0xFF00C853).withOpacity(0.18),
+        checkmarkColor: const Color(0xFF00C853),
+        labelStyle: TextStyle(
+          color: isSelected ? const Color(0xFF00A86B) : Colors.black54,
+          fontWeight: FontWeight.w700,
+        ),
+        side: BorderSide(
+          color: isSelected ? const Color(0xFF00C853) : Colors.grey.shade300,
+        ),
+        onSelected: (selected) {
+          setModalState(() {
+            if (selected) {
+              selectedDays.add(value);
+            } else {
+              selectedDays.remove(value);
+            }
+          });
+        },
+      );
+    }).toList(),
+  ),
+],
                       const SizedBox(height: 24),
                       SizedBox(
                         width: double.infinity, height: 54,
@@ -537,15 +660,31 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                               ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(selectedCategory == 'Medicamentos' ? 'Completa el nombre del medicamento' : selectedCategory == 'Salidas / Visitas' ? 'Completa la visita o lugar de salida' : 'Completa el nombre de la tarea')));
                               return;
                             }
-                            if (selectedDays.isEmpty) {
-                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Selecciona al menos un día de repetición'), backgroundColor: Colors.redAccent));
-                              return;
-                            }
+                          if (repeatType == 'weekly_days' && selectedDays.isEmpty) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(
+      content: Text('Selecciona al menos un día de repetición'),
+      backgroundColor: Colors.redAccent,
+    ),
+  );
+  return;
+}
 
                             final formattedTime = '$selectedHour:$selectedMinute $selectedPeriod';
-                            final String taskId = await _dbService.addTask(
-                              patientId: widget.patientId, title: title, time: formattedTime, category: selectedCategory, diasSemana: selectedDays.toList(),
-                            );
+                           final List<String> diasSemanaToSave = repeatType == 'weekly_days'
+    ? selectedDays.toList()
+    : [];
+
+final String taskId = await _dbService.addTask(
+  patientId: widget.patientId,
+  title: title,
+  time: formattedTime,
+  category: selectedCategory,
+  diasSemana: diasSemanaToSave,
+  repeatType: repeatType,
+  repeatEveryDays: repeatType == 'every_n_days' ? repeatEveryDays : null,
+  startDate: startDate,
+);
 
                             if (!Provider.of<SessionProvider>(context, listen: false).isAdmin) {
                               await NotificationService.scheduleMedicationReminder(
@@ -1145,7 +1284,11 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
         }
 
         return StreamBuilder<QuerySnapshot>(
-          stream: _dbService.getPatientTasksForTodayStream(widget.patientId),
+         stream: FirebaseFirestore.instance
+    .collection('patients')
+    .doc(widget.patientId)
+    .collection('tasks')
+    .snapshots(),
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const Center(child: CircularProgressIndicator(color: AppTheme.blue));
@@ -1157,32 +1300,49 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
 
             final docs = snapshot.data?.docs ?? [];
 
-            if (docs.isEmpty) {
-              return ListView(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 90),
-                children: [
-                  const Text('Tareas por categoría', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Colors.black87)),
-                  const SizedBox(height: 6),
-                  const Text('Registro diario de cuidados realizados al paciente.', style: TextStyle(fontSize: 14, color: Colors.black54)),
-                  const SizedBox(height: 32),
-                  Container(
-                    padding: const EdgeInsets.all(24),
-                    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(22), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 12, offset: const Offset(0, 6))]),
-                    child: Column(
-                      children: [
-                        Icon(Icons.checklist_rounded, size: 44, color: Colors.grey.shade400),
-                        const SizedBox(height: 12),
-                        const Text('No hay tareas para hoy', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Colors.black87)),
-                      ],
-                    ),
-                  ),
-                  if (session.rol != 'cuidador') ...[const SizedBox(height: 18), _buildAddTaskButton()],
-                ],
-              );
-            }
+final docsToday = docs.where((doc) {
+  final data = doc.data() as Map<String, dynamic>;
+  return _isTaskScheduledForToday(data);
+}).toList();
 
-            final groupedTasks = _groupTasksByCategory(docs);
+if (docsToday.isEmpty) {
+  return ListView(
+    padding: const EdgeInsets.fromLTRB(16, 16, 16, 90),
+    children: [
+      const Text('Tareas por categoría', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Colors.black87)),
+      const SizedBox(height: 6),
+      const Text('Registro diario de cuidados realizados al paciente.', style: TextStyle(fontSize: 14, color: Colors.black54)),
+      const SizedBox(height: 32),
+      Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(22),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 12,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Column(
+          children: [
+            Icon(Icons.checklist_rounded, size: 44, color: Colors.grey.shade400),
+            const SizedBox(height: 12),
+            const Text('No hay tareas para hoy', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Colors.black87)),
+          ],
+        ),
+      ),
+      if (session.rol != 'cuidador') ...[
+        const SizedBox(height: 18),
+        _buildAddTaskButton(),
+      ],
+    ],
+  );
+}
 
+final groupedTasks = _groupTasksByCategory(docsToday);
             return ListView(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 90),
               children: [
@@ -1192,12 +1352,9 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                 const SizedBox(height: 18),
                 ...groupedTasks.entries.map((entry) {
                   final category = entry.key;
-                  final allTasks = entry.value;
+                 final tasksToday = entry.value;
 
-                  final tasksToday = allTasks.where((doc) {
-                    final data = doc.data() as Map<String, dynamic>;
-                    return _isTaskScheduledForToday(data);
-                  }).toList();
+        
 
                   final completed = tasksToday.where((doc) {
                     final data = doc.data() as Map<String, dynamic>;
