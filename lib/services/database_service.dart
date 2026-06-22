@@ -295,24 +295,24 @@ class DatabaseService {
     required String patientId,
     required String photoUrl,
   }) async {
-    await _db.collection('patients').doc(patientId).update({
+    await _db.collection('pacientes').doc(patientId).update({
       'photoUrl': photoUrl,
     });
   }
 
   Stream<QuerySnapshot> getPatientTasksStream(String patientId) {
     return _db
-        .collection('patients')
+        .collection('pacientes')
         .doc(patientId)
-        .collection('tasks')
+        .collection('tareas')
         .snapshots();
   }
 
   Stream<QuerySnapshot> getPatientTasksForTodayStream(String patientId) {
     return _db
-        .collection('patients')
+        .collection('pacientes')
         .doc(patientId)
-        .collection('tasks')
+        .collection('tareas')
         .snapshots();
   }
 
@@ -325,9 +325,9 @@ class DatabaseService {
     final String fechaActual = getFechaActualKey();
 
     await _db
-        .collection('patients')
+        .collection('pacientes')
         .doc(patientId)
-        .collection('tasks')
+        .collection('tareas')
         .doc(taskId)
         .update({
       'isCompleted': isCompleted,
@@ -351,9 +351,9 @@ class DatabaseService {
     DateTime? startDate,
   }) async {
     final docRef = await _db
-        .collection('patients')
+        .collection('pacientes')
         .doc(patientId)
-        .collection('tasks')
+        .collection('tareas')
         .add({
       'title': title,
       'time': time,
@@ -374,18 +374,18 @@ class DatabaseService {
     Map<String, dynamic> data,
   ) async {
     await _db
-        .collection('patients')
+        .collection('pacientes')
         .doc(patientId)
-        .collection('tasks')
+        .collection('tareas')
         .doc(taskId)
         .update(data);
   }
 
   Future<void> deleteTask(String patientId, String taskId) async {
     final DocumentSnapshot doc = await _db
-        .collection('patients')
+        .collection('pacientes')
         .doc(patientId)
-        .collection('tasks')
+        .collection('tareas')
         .doc(taskId)
         .get();
 
@@ -405,9 +405,9 @@ class DatabaseService {
     }
 
     await _db
-        .collection('patients')
+        .collection('pacientes')
         .doc(patientId)
-        .collection('tasks')
+        .collection('tareas')
         .doc(taskId)
         .delete();
   }

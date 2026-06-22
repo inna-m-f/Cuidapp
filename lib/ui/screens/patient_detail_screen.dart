@@ -1284,11 +1284,11 @@ final String taskId = await _dbService.addTask(
         }
 
         return StreamBuilder<QuerySnapshot>(
-         stream: FirebaseFirestore.instance
-    .collection('patients')
-    .doc(widget.patientId)
-    .collection('tasks')
-    .snapshots(),
+          stream: FirebaseFirestore.instance
+              .collection('pacientes')
+              .doc(widget.patientId)
+              .collection('tareas')
+              .snapshots(),
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const Center(child: CircularProgressIndicator(color: AppTheme.blue));

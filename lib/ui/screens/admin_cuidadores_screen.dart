@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -73,8 +74,8 @@ class _AdminCuidadoresScreenState extends State<AdminCuidadoresScreen> {
 
       final XFile? pickedImage = await picker.pickImage(
         source: source,
-        imageQuality: 75,
-        maxWidth: 900,
+        imageQuality: 50,
+        maxWidth: 250,
       );
 
       if (pickedImage == null) {
@@ -88,14 +89,20 @@ class _AdminCuidadoresScreenState extends State<AdminCuidadoresScreen> {
 
       debugPrint('Bytes de imagen: ${imageBytes.length}');
 
-      final String photoUrl = await _storageService.uploadProfileImage(
-        folder: 'usuarios',
-        id: uid,
-        imageBytes: imageBytes,
-      );
+      String photoUrl;
+      try {
+        photoUrl = await _storageService.uploadProfileImage(
+          folder: 'usuarios',
+          id: uid,
+          imageBytes: imageBytes,
+        );
+        debugPrint('Imagen subida correctamente a Storage');
+      } catch (storageError) {
+        debugPrint('Fallo Storage, guardando en Base64 en Firestore: $storageError');
+        photoUrl = 'data:image/jpeg;base64,${base64Encode(imageBytes)}';
+      }
 
-      debugPrint('Imagen subida correctamente');
-      debugPrint('photoUrl: $photoUrl');
+      debugPrint('photoUrl obtenido/generado');
 
       await _dbService.updateUserPhoto(
         userId: uid,
@@ -844,7 +851,9 @@ class _AdminCuidadoresScreenState extends State<AdminCuidadoresScreen> {
                                   ? Colors.grey.shade300
                                   : AppTheme.blue.withOpacity(0.1),
                               backgroundImage: photoUrl.isNotEmpty
-                                  ? NetworkImage(photoUrl)
+                                  ? (photoUrl.startsWith('data:image') || !photoUrl.startsWith('http')
+                                      ? MemoryImage(base64Decode(photoUrl.split(',').last))
+                                      : NetworkImage(photoUrl) as ImageProvider)
                                   : null,
                               child: photoUrl.isEmpty
                                   ? Text(
