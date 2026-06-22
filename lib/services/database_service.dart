@@ -33,6 +33,7 @@ class DatabaseService {
   String _getDiaSemanaActual() {
     final String dia =
         DateFormat('EEEE', 'es_ES').format(DateTime.now()).toLowerCase();
+
     return dia
         .replaceAll('miércoles', 'miercoles')
         .replaceAll('sábado', 'sabado');
@@ -47,6 +48,7 @@ class DatabaseService {
     final String year = now.year.toString();
     final String month = now.month.toString().padLeft(2, '0');
     final String day = now.day.toString().padLeft(2, '0');
+
     return '$year-$month-$day';
   }
 
@@ -73,11 +75,17 @@ class DatabaseService {
     });
   }
 
-  Future<void> updatePacienteData(String patientId, Map<String, dynamic> data) async {
+  Future<void> updatePacienteData(
+    String patientId,
+    Map<String, dynamic> data,
+  ) async {
     await _db.collection('pacientes').doc(patientId).update(data);
   }
 
-  Future<void> updateMedicalRecord(String patientId, Map<String, dynamic> data) async {
+  Future<void> updateMedicalRecord(
+    String patientId,
+    Map<String, dynamic> data,
+  ) async {
     await _db.collection('pacientes').doc(patientId).update(data);
   }
 
@@ -93,6 +101,7 @@ class DatabaseService {
     for (final doc in tasks.docs) {
       batch.delete(doc.reference);
     }
+
     batch.delete(_db.collection('pacientes').doc(pacienteId));
     await batch.commit();
   }
@@ -103,6 +112,7 @@ class DatabaseService {
     required String cuidadorId,
   }) async {
     final String asignacion = '${diaSemana.toLowerCase()}_$cuidadorId';
+
     await _db.collection('pacientes').doc(pacienteId).update({
       'asignaciones': FieldValue.arrayUnion([asignacion]),
     });
@@ -114,6 +124,7 @@ class DatabaseService {
     required String cuidadorId,
   }) async {
     final String asignacion = '${diaSemana.toLowerCase()}_$cuidadorId';
+
     await _db.collection('pacientes').doc(pacienteId).update({
       'asignaciones': FieldValue.arrayRemove([asignacion]),
     });
@@ -142,6 +153,7 @@ class DatabaseService {
 
     try {
       final FirebaseAuth tempAuth = FirebaseAuth.instanceFor(app: tempApp);
+
       final UserCredential credential =
           await tempAuth.createUserWithEmailAndPassword(
         email: email.trim(),
@@ -155,11 +167,12 @@ class DatabaseService {
         'nombre': nombre,
         'email': email.trim(),
         'roles': {centroId: 'cuidador'},
-        'centros': [centroId], 
+        'centros': [centroId],
         'centroId': centroId,
         'mustChangePassword': true,
         'invitaciones': [],
         'fechaCreacion': FieldValue.serverTimestamp(),
+        'photoUrl': '',
       });
 
       await tempAuth.signOut();
@@ -170,15 +183,19 @@ class DatabaseService {
 
   Future<DocumentSnapshot?> findUserByRut(String rut) async {
     final String cleanRut = rut.replaceAll('.', '').replaceAll('-', '').trim();
+
     if (cleanRut.isEmpty) return null;
+
     final QuerySnapshot result = await _db
         .collection('usuarios')
         .where('rut', isEqualTo: cleanRut)
         .limit(1)
         .get();
+
     if (result.docs.isNotEmpty) {
       return result.docs.first;
     }
+
     return null;
   }
 
@@ -205,22 +222,28 @@ class DatabaseService {
 
   Future<void> removeUserFromCentro(String uid, String centroId) async {
     final DocumentReference docRef = _db.collection('usuarios').doc(uid);
+
     await _db.runTransaction((transaction) async {
       final DocumentSnapshot snapshot = await transaction.get(docRef);
+
       if (!snapshot.exists) return;
-      final Map<String, dynamic> data = snapshot.data() as Map<String, dynamic>;
-      
+
+      final Map<String, dynamic> data =
+          snapshot.data() as Map<String, dynamic>;
+
       final List<String> centros = List<String>.from(data['centros'] ?? []);
       centros.remove(centroId);
-      
-      final Map<String, dynamic> roles = Map<String, dynamic>.from(data['roles'] ?? {});
+
+      final Map<String, dynamic> roles =
+          Map<String, dynamic>.from(data['roles'] ?? {});
       roles.remove(centroId);
-      
+
       String newActiveCentroId = data['centroId'] ?? '';
+
       if (newActiveCentroId == centroId) {
         newActiveCentroId = centros.isNotEmpty ? centros.first : '';
       }
-      
+
       transaction.update(docRef, {
         'centros': centros,
         'roles': roles,
@@ -228,7 +251,6 @@ class DatabaseService {
       });
     });
 
-    // Limpiar asignaciones del cuidador desvinculado en los pacientes del centro
     try {
       final QuerySnapshot patientsQuery = await _db
           .collection('pacientes')
@@ -240,12 +262,11 @@ class DatabaseService {
 
       for (final doc in patientsQuery.docs) {
         final pData = doc.data() as Map<String, dynamic>;
-        final List<String> asignaciones = List<String>.from(pData['asignaciones'] ?? []);
-        
-        // Buscar cualquier asignación que termine con "_$uid"
-        final List<String> toRemove = asignaciones
-            .where((asig) => asig.endsWith('_$uid'))
-            .toList();
+        final List<String> asignaciones =
+            List<String>.from(pData['asignaciones'] ?? []);
+
+        final List<String> toRemove =
+            asignaciones.where((asig) => asig.endsWith('_$uid')).toList();
 
         if (toRemove.isNotEmpty) {
           patientBatch.update(doc.reference, {
@@ -258,26 +279,40 @@ class DatabaseService {
       if (hasUpdates) {
         await patientBatch.commit();
       }
-    } catch (e) {
-      // Registrar silenciosamente o manejar error si es necesario
-    }
+    } catch (_) {}
+  }
+
+  Future<void> updateUserPhoto({
+    required String userId,
+    required String photoUrl,
+  }) async {
+    await _db.collection('usuarios').doc(userId).update({
+      'photoUrl': photoUrl,
+    });
+  }
+
+  Future<void> updatePatientPhoto({
+    required String patientId,
+    required String photoUrl,
+  }) async {
+    await _db.collection('patients').doc(patientId).update({
+      'photoUrl': photoUrl,
+    });
   }
 
   Stream<QuerySnapshot> getPatientTasksStream(String patientId) {
     return _db
-        .collection('pacientes')
+        .collection('patients')
         .doc(patientId)
-        .collection('tareas')
+        .collection('tasks')
         .snapshots();
   }
 
   Stream<QuerySnapshot> getPatientTasksForTodayStream(String patientId) {
-    final String diaActual = _getDiaSemanaActual();
     return _db
-        .collection('pacientes')
+        .collection('patients')
         .doc(patientId)
-        .collection('tareas')
-        .where('diasSemana', arrayContains: diaActual)
+        .collection('tasks')
         .snapshots();
   }
 
@@ -288,10 +323,11 @@ class DatabaseService {
     String uid,
   ) async {
     final String fechaActual = getFechaActualKey();
+
     await _db
-        .collection('pacientes')
+        .collection('patients')
         .doc(patientId)
-        .collection('tareas')
+        .collection('tasks')
         .doc(taskId)
         .update({
       'isCompleted': isCompleted,
@@ -304,44 +340,52 @@ class DatabaseService {
     });
   }
 
-Future<String> addTask({
-  required String patientId,
-  required String title,
-  required String time,
-  required String category,
-  required List<String> diasSemana,
-  String repeatType = 'weekly_days',
-  int? repeatEveryDays,
-  DateTime? startDate,
-}) async {
-  final docRef = await FirebaseFirestore.instance
-      .collection('patients')
-      .doc(patientId)
-      .collection('tasks')
-      .add({
-        'title': title,
-        'time': time,
-        'category': category,
-        'diasSemana': diasSemana,
-        'repeatType': repeatType,
-        'repeatEveryDays': repeatEveryDays,
-        'startDate': Timestamp.fromDate(startDate ?? DateTime.now()),
-        'createdAt': FieldValue.serverTimestamp(),
-      });
+  Future<String> addTask({
+    required String patientId,
+    required String title,
+    required String time,
+    required String category,
+    required List<String> diasSemana,
+    String repeatType = 'weekly_days',
+    int? repeatEveryDays,
+    DateTime? startDate,
+  }) async {
+    final docRef = await _db
+        .collection('patients')
+        .doc(patientId)
+        .collection('tasks')
+        .add({
+      'title': title,
+      'time': time,
+      'category': category,
+      'diasSemana': diasSemana,
+      'repeatType': repeatType,
+      'repeatEveryDays': repeatEveryDays,
+      'startDate': Timestamp.fromDate(startDate ?? DateTime.now()),
+      'createdAt': FieldValue.serverTimestamp(),
+    });
 
-  return docRef.id;
-}
+    return docRef.id;
+  }
 
-  // NUEVO: Método para actualizar tareas
-  Future<void> updateTaskData(String patientId, String taskId, Map<String, dynamic> data) async {
-    await _db.collection('pacientes').doc(patientId).collection('tareas').doc(taskId).update(data);
+  Future<void> updateTaskData(
+    String patientId,
+    String taskId,
+    Map<String, dynamic> data,
+  ) async {
+    await _db
+        .collection('patients')
+        .doc(patientId)
+        .collection('tasks')
+        .doc(taskId)
+        .update(data);
   }
 
   Future<void> deleteTask(String patientId, String taskId) async {
     final DocumentSnapshot doc = await _db
-        .collection('pacientes')
+        .collection('patients')
         .doc(patientId)
-        .collection('tareas')
+        .collection('tasks')
         .doc(taskId)
         .get();
 
@@ -361,9 +405,9 @@ Future<String> addTask({
     }
 
     await _db
-        .collection('pacientes')
+        .collection('patients')
         .doc(patientId)
-        .collection('tareas')
+        .collection('tasks')
         .doc(taskId)
         .delete();
   }
