@@ -73,6 +73,11 @@ class SessionProvider extends ChangeNotifier {
     return success;
   }
 
+  Future<void> updateNombre(String newName) async {
+    await _sessionService.updateNombre(newName);
+    notifyListeners();
+  }
+
   Future<void> clear() async {
     await _sessionService.clear();
     notifyListeners();

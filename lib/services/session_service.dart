@@ -184,6 +184,14 @@ class SessionService {
     return false;
   }
 
+  Future<void> updateNombre(String newName) async {
+    _nombre = newName;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('session_nombre', newName);
+    } catch (_) {}
+  }
+
   // Limpiar los datos al cerrar sesión
   Future<void> clear() async {
     _uid = null;

@@ -1,10 +1,17 @@
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:open_filex/open_filex.dart';
 import '../../core/theme.dart';
 import '../../services/database_service.dart';
 import '../../services/notification_service.dart';
 import '../../providers/session_provider.dart';
+import '../../services/image_helper.dart';
 import 'patient_history_screen.dart';
 
 class PatientDetailScreen extends StatefulWidget {
@@ -27,6 +34,11 @@ class PatientDetailScreen extends StatefulWidget {
 
 class _PatientDetailScreenState extends State<PatientDetailScreen> {
   final DatabaseService _dbService = DatabaseService();
+
+  @override
+  void initState() {
+    super.initState();
+  }
 
   String _normalizeDia(String dia) {
     switch (dia.toLowerCase()) {
@@ -746,6 +758,22 @@ final String taskId = await _dbService.addTask(
     String selectedMinute = initialMinute;
     String selectedPeriod = initialPeriod;
     String selectedMeal = initialMeal;
+
+    String repeatType = currentData['repeatType']?.toString() ?? 'weekly_days';
+    int repeatEveryDays = currentData['repeatEveryDays'] is int
+        ? currentData['repeatEveryDays']
+        : int.tryParse(currentData['repeatEveryDays']?.toString() ?? '') ?? 2;
+
+    DateTime startDate = DateTime.now();
+    final rawStartDate = currentData['startDate'];
+    if (rawStartDate is Timestamp) {
+      startDate = rawStartDate.toDate();
+    } else if (rawStartDate is String) {
+      final parsed = DateTime.tryParse(rawStartDate);
+      if (parsed != null) {
+        startDate = parsed;
+      }
+    }
     
     List<String> rawDays = List<String>.from(currentData['diasSemana'] ?? []);
     final Set<String> selectedDays = rawDays.map((e) => e.toLowerCase()).toSet();
@@ -764,6 +792,13 @@ final String taskId = await _dbService.addTask(
 
     final List<String> hours = List.generate(12, (index) => '${index + 1}');
     final List<String> minutes = List.generate(60, (index) => index.toString().padLeft(2, '0'));
+    final List<Map<String, String>> repeatOptions = [
+      {'label': 'Una sola vez', 'value': 'once'},
+      {'label': 'Todos los días', 'value': 'daily'},
+      {'label': 'Días específicos', 'value': 'weekly_days'},
+      {'label': 'Cada cierto número de días', 'value': 'every_n_days'},
+    ];
+    final List<int> repeatEveryOptions = [2, 3, 4, 5, 7, 14, 30];
 
     showModalBottomSheet(
       context: context,
@@ -914,46 +949,121 @@ final String taskId = await _dbService.addTask(
                       const SizedBox(height: 10),
                       Text('Horario seleccionado: $selectedHour:$selectedMinute $selectedPeriod', style: const TextStyle(fontSize: 13, color: Colors.black54, fontWeight: FontWeight.w600)),
                       const SizedBox(height: 18),
-                      const Text('Días de repetición', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.black87)),
+                      const Text('Patrón de repetición', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.black87)),
                       const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 8, runSpacing: 8,
-                        children: weekDays.map((day) {
-                          final label = day['label']!;
-                          final value = day['value']!;
-                          final isSelected = selectedDays.contains(value);
-
-                          return FilterChip(
-                            label: Text(label), selected: isSelected,
-                            selectedColor: const Color(0xFF00C853).withOpacity(0.18),
-                            checkmarkColor: const Color(0xFF00C853),
-                            labelStyle: TextStyle(color: isSelected ? const Color(0xFF00A86B) : Colors.black54, fontWeight: FontWeight.w700),
-                            side: BorderSide(color: isSelected ? const Color(0xFF00C853) : Colors.grey.shade300),
-                            onSelected: (selected) {
-                              setModalState(() {
-                                if (selected) { selectedDays.add(value); } else { selectedDays.remove(value); }
-                              });
-                            },
+                      DropdownButtonFormField<String>(
+                        value: repeatType,
+                        decoration: InputDecoration(
+                          filled: true,
+                          fillColor: Colors.grey.shade100,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                        items: repeatOptions.map((option) {
+                          return DropdownMenuItem(
+                            value: option['value'],
+                            child: Text(option['label']!),
                           );
                         }).toList(),
+                        onChanged: (value) {
+                          if (value == null) return;
+                          setModalState(() {
+                            repeatType = value;
+                          });
+                        },
                       ),
+                      if (repeatType == 'every_n_days') ...[
+                        const SizedBox(height: 14),
+                        const Text('Repetir cada', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.black87)),
+                        const SizedBox(height: 8),
+                        DropdownButtonFormField<int>(
+                          value: repeatEveryDays,
+                          decoration: InputDecoration(
+                            filled: true,
+                            fillColor: Colors.grey.shade100,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              borderSide: BorderSide.none,
+                            ),
+                          ),
+                          items: repeatEveryOptions.map((days) {
+                            return DropdownMenuItem(
+                              value: days,
+                              child: Text('Cada $days días'),
+                            );
+                          }).toList(),
+                          onChanged: (value) {
+                            if (value == null) return;
+                            setModalState(() {
+                              repeatEveryDays = value;
+                            });
+                          },
+                        ),
+                      ],
+                      if (repeatType == 'weekly_days') ...[
+                        const SizedBox(height: 14),
+                        const Text('Días de repetición', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.black87)),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8, runSpacing: 8,
+                          children: weekDays.map((day) {
+                            final label = day['label']!;
+                            final value = day['value']!;
+                            final isSelected = selectedDays.contains(value);
+
+                            return FilterChip(
+                              label: Text(label), selected: isSelected,
+                              selectedColor: const Color(0xFF00C853).withOpacity(0.18),
+                              checkmarkColor: const Color(0xFF00C853),
+                              labelStyle: TextStyle(color: isSelected ? const Color(0xFF00A86B) : Colors.black54, fontWeight: FontWeight.w700),
+                              side: BorderSide(color: isSelected ? const Color(0xFF00C853) : Colors.grey.shade300),
+                              onSelected: (selected) {
+                                setModalState(() {
+                                  if (selected) { selectedDays.add(value); } else { selectedDays.remove(value); }
+                                });
+                              },
+                            );
+                          }).toList(),
+                        ),
+                      ],
                       const SizedBox(height: 24),
                       SizedBox(
                         width: double.infinity, height: 54,
                         child: ElevatedButton.icon(
                           onPressed: () async {
                             final title = selectedCategory == 'Alimentación' ? selectedMeal : titleCtrl.text.trim();
-                            if (title.isEmpty) return;
-                            if (selectedDays.isEmpty) return;
+                            if (title.isEmpty) {
+                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(selectedCategory == 'Medicamentos' ? 'Completa el nombre del medicamento' : selectedCategory == 'Salidas / Visitas' ? 'Completa la visita o lugar de salida' : 'Completa el nombre de la tarea')));
+                              return;
+                            }
+                            if (repeatType == 'weekly_days' && selectedDays.isEmpty) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Selecciona al menos un día de repetición'),
+                                  backgroundColor: Colors.redAccent,
+                                ),
+                              );
+                              return;
+                            }
 
                             final formattedTime = '$selectedHour:$selectedMinute $selectedPeriod';
-                            
+                            final List<String> diasSemanaToSave = repeatType == 'weekly_days'
+                                ? selectedDays.toList()
+                                : [];
+
                             try {
                               await _dbService.updateTaskData(widget.patientId, taskId, {
                                 'title': title,
                                 'time': formattedTime,
                                 'category': selectedCategory,
-                                'diasSemana': selectedDays.toList(),
+                                'diasSemana': diasSemanaToSave,
+                                'repeatType': repeatType,
+                                'repeatEveryDays': repeatType == 'every_n_days' ? repeatEveryDays : null,
+                                'startDate': startDate,
                               });
 
                               if (!context.mounted) return;
@@ -1097,12 +1207,63 @@ final String taskId = await _dbService.addTask(
           backgroundColor: AppTheme.blue, 
           elevation: 0,
           iconTheme: const IconThemeData(color: Colors.white),
-          title: Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Text(widget.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.white)),
-              Text(widget.details, style: const TextStyle(fontSize: 13, color: Colors.white)),
-            ],
+          title: StreamBuilder<DocumentSnapshot>(
+            stream: FirebaseFirestore.instance.collection('pacientes').doc(widget.patientId).snapshots(),
+            builder: (context, snapshot) {
+              String name = widget.name;
+              String details = widget.details;
+              String photoUrl = '';
+              String initials = widget.initials;
+
+              if (snapshot.hasData && snapshot.data!.exists) {
+                final data = snapshot.data!.data() as Map<String, dynamic>;
+                name = data['name'] ?? widget.name;
+                details = data['details'] ?? widget.details;
+                photoUrl = data['photoUrl'] ?? '';
+                initials = data['initials'] ?? widget.initials;
+              }
+
+              return Row(
+                children: [
+                  CircleAvatar(
+                    radius: 18,
+                    backgroundColor: Colors.white24,
+                    backgroundImage: photoUrl.isNotEmpty
+                        ? (photoUrl.startsWith('data:image') || !photoUrl.startsWith('http')
+                            ? MemoryImage(base64Decode(photoUrl.split(',').last))
+                            : NetworkImage(photoUrl) as ImageProvider)
+                        : null,
+                    child: photoUrl.isEmpty
+                        ? Text(
+                            initials.toUpperCase(),
+                            style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                          )
+                        : null,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          name,
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Text(
+                          details,
+                          style: const TextStyle(fontSize: 12, color: Colors.white70),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
           actions: [
             if (isAdmin)
@@ -1162,6 +1323,24 @@ final String taskId = await _dbService.addTask(
         final emergencyName = data['emergencyContactName']?.toString().isNotEmpty == true ? data['emergencyContactName'] : 'Sin contacto';
         final emergencyPhone = data['emergencyContactPhone']?.toString().isNotEmpty == true ? data['emergencyContactPhone'] : '--';
         final observations = data['observations']?.toString().isNotEmpty == true ? data['observations'] : 'Sin observaciones generales.';
+        
+        final List<dynamic> rawFiles = data['medicalRecordFiles'] as List<dynamic>? ?? [];
+        final List<Map<String, String>> medicalFiles = rawFiles.map((item) {
+          final m = item as Map<dynamic, dynamic>;
+          return {
+            'file': m['file']?.toString() ?? '',
+            'name': m['name']?.toString() ?? '',
+          };
+        }).toList();
+
+        final legacyFile = data['medicalRecordFile']?.toString() ?? '';
+        final legacyFileName = data['medicalRecordFileName']?.toString() ?? '';
+        if (medicalFiles.isEmpty && legacyFile.isNotEmpty) {
+          medicalFiles.add({
+            'file': legacyFile,
+            'name': legacyFileName,
+          });
+        }
 
         return ListView(
           padding: const EdgeInsets.all(20.0),
@@ -1175,11 +1354,12 @@ final String taskId = await _dbService.addTask(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     _buildDetailStatusBadge(status),
-                    TextButton.icon(
-                      onPressed: () => _showChangeStatusDialog(context, status),
-                      icon: const Icon(Icons.edit, color: AppTheme.blue, size: 16),
-                      label: const Text('Cambiar Estado', style: TextStyle(color: AppTheme.blue, fontWeight: FontWeight.bold)),
-                    ),
+                    if (session.isAdmin)
+                      TextButton.icon(
+                        onPressed: () => _showChangeStatusDialog(context, status),
+                        icon: const Icon(Icons.edit, color: AppTheme.blue, size: 16),
+                        label: const Text('Cambiar Estado', style: TextStyle(color: AppTheme.blue, fontWeight: FontWeight.bold)),
+                      ),
                   ],
                 ),
               ],
@@ -1197,7 +1377,7 @@ final String taskId = await _dbService.addTask(
               ),
             
             _buildMedicalInfoCard(
-              title: 'Información Clínica',
+              title: 'Información Clínicas',
               icon: Icons.favorite,
               color: Colors.redAccent,
               children: [
@@ -1228,6 +1408,159 @@ final String taskId = await _dbService.addTask(
               color: AppTheme.blue,
               children: [
                 Text(observations, style: const TextStyle(fontSize: 14, color: Colors.black87, height: 1.4)),
+              ],
+            ),
+            const SizedBox(height: 15),
+
+            _buildMedicalInfoCard(
+              title: 'Fichas Físicas Adjuntas',
+              icon: Icons.attach_file_rounded,
+              color: Colors.teal,
+              children: [
+                if (medicalFiles.isEmpty) ...[
+                  const Text(
+                    'No hay ningún documento o foto de la ficha médica adjunto.',
+                    style: TextStyle(fontSize: 14, color: Colors.black54, fontStyle: FontStyle.italic),
+                  ),
+                  if (session.isAdmin) ...[
+                    const SizedBox(height: 15),
+                    ElevatedButton.icon(
+                      onPressed: () => _attachMedicalRecordFile(context, widget.patientId),
+                      icon: const Icon(Icons.add, color: Colors.white),
+                      label: const Text('Adjuntar Documento o Foto', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.teal,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
+                  ],
+                ] else ...[
+                  ListView.separated(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: medicalFiles.length,
+                    separatorBuilder: (context, index) => const Divider(height: 20),
+                    itemBuilder: (context, index) {
+                      final fileMap = medicalFiles[index];
+                      final fName = fileMap['name'] ?? '';
+                      final fData = fileMap['file'] ?? '';
+                      final isPdf = fName.toLowerCase().endsWith('.pdf');
+
+                      return Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                isPdf ? Icons.picture_as_pdf_rounded : Icons.image_rounded,
+                                color: Colors.teal,
+                                size: 32,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      fName.isNotEmpty ? fName : 'Ficha Adjunta',
+                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      isPdf ? 'Documento PDF' : 'Imagen / Foto',
+                                      style: const TextStyle(color: Colors.grey, fontSize: 12),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              if (session.isAdmin)
+                                IconButton(
+                                  icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                                  onPressed: () async {
+                                    final confirm = await showDialog<bool>(
+                                      context: context,
+                                      builder: (context) => AlertDialog(
+                                        title: const Text('Eliminar Documento', style: TextStyle(fontWeight: FontWeight.bold)),
+                                        content: Text('¿Estás seguro de que deseas eliminar "$fName"?'),
+                                        actions: [
+                                          TextButton(
+                                            onPressed: () => Navigator.pop(context, false),
+                                            child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
+                                          ),
+                                          ElevatedButton(
+                                            onPressed: () => Navigator.pop(context, true),
+                                            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+                                            child: const Text('Eliminar', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+
+                                    if (confirm == true) {
+                                      if (fData == legacyFile && fName == legacyFileName) {
+                                        await FirebaseFirestore.instance.collection('pacientes').doc(widget.patientId).update({
+                                          'medicalRecordFile': FieldValue.delete(),
+                                          'medicalRecordFileName': FieldValue.delete(),
+                                        });
+                                      } else {
+                                        await FirebaseFirestore.instance.collection('pacientes').doc(widget.patientId).update({
+                                          'medicalRecordFiles': FieldValue.arrayRemove([fileMap]),
+                                        });
+                                      }
+                                      if (!context.mounted) return;
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(content: Text('Documento eliminado'), backgroundColor: Colors.green),
+                                      );
+                                    }
+                                  },
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  onPressed: () {
+                                    if (isPdf) {
+                                      _openPdfFile(context, fData, fName);
+                                    } else {
+                                      _viewAttachedImage(context, fData);
+                                    }
+                                  },
+                                  icon: const Icon(Icons.remove_red_eye, color: Colors.white, size: 16),
+                                  label: Text(
+                                    isPdf ? 'Ver PDF' : 'Ver Imagen',
+                                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                                  ),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.teal,
+                                    padding: const EdgeInsets.symmetric(vertical: 8),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                  if (session.isAdmin) ...[
+                    const SizedBox(height: 20),
+                    ElevatedButton.icon(
+                      onPressed: () => _attachMedicalRecordFile(context, widget.patientId),
+                      icon: const Icon(Icons.add, color: Colors.white),
+                      label: const Text('Adjuntar Otro Documento o Foto', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.teal,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
+                  ],
+                ],
               ],
             ),
           ],
@@ -1334,7 +1667,7 @@ if (docsToday.isEmpty) {
           ],
         ),
       ),
-      if (session.rol != 'cuidador') ...[
+      if (session.isAdmin) ...[
         const SizedBox(height: 18),
         _buildAddTaskButton(),
       ],
@@ -1365,7 +1698,7 @@ final groupedTasks = _groupTasksByCategory(docsToday);
                     category: category, completed: completed, total: tasksToday.length, tasks: tasksToday, caregiverMap: caregiverMap, session: session,
                   );
                 }).toList(),
-                if (session.rol != 'cuidador') ...[const SizedBox(height: 8), _buildAddTaskButton()],
+                if (session.isAdmin) ...[const SizedBox(height: 8), _buildAddTaskButton()],
               ],
             );
           },
@@ -1695,6 +2028,191 @@ final groupedTasks = _groupTasksByCategory(docsToday);
           ),
         );
       },
+    );
+  }
+
+  Future<void> _attachMedicalRecordFile(BuildContext context, String patientId) async {
+    final option = await showModalBottomSheet<String>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.camera_alt),
+              title: const Text('Tomar Foto (Cámara)'),
+              onTap: () => Navigator.pop(context, 'camera'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library),
+              title: const Text('Seleccionar de Galería'),
+              onTap: () => Navigator.pop(context, 'gallery'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.picture_as_pdf),
+              title: const Text('Seleccionar Archivo PDF'),
+              onTap: () => Navigator.pop(context, 'pdf'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (option == null) return;
+
+    try {
+      if (option == 'pdf') {
+        final result = await FilePicker.pickFiles(
+          type: FileType.custom,
+          allowedExtensions: ['pdf'],
+          withData: true,
+        );
+
+        if (result != null && result.files.isNotEmpty) {
+          final file = result.files.first;
+          final bytes = file.bytes;
+          if (bytes != null) {
+            if (bytes.length > 900 * 1024) {
+              if (!context.mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('El archivo es demasiado grande (Límite: 900KB para Firestore)'),
+                  backgroundColor: Colors.redAccent,
+                ),
+              );
+              return;
+            }
+
+            final base64String = 'data:application/pdf;base64,${base64Encode(bytes)}';
+            await FirebaseFirestore.instance.collection('pacientes').doc(patientId).update({
+              'medicalRecordFiles': FieldValue.arrayUnion([
+                {
+                  'file': base64String,
+                  'name': file.name,
+                }
+              ]),
+            });
+            if (!context.mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('PDF adjuntado exitosamente'), backgroundColor: Colors.green),
+            );
+          }
+        }
+      } else {
+        final picker = ImagePicker();
+        final pickedImage = await picker.pickImage(
+          source: option == 'camera' ? ImageSource.camera : ImageSource.gallery,
+          imageQuality: 50,
+          maxWidth: 1000,
+        );
+
+        if (pickedImage != null) {
+          final croppedPath = await ImageHelper.cropImage(
+            sourcePath: pickedImage.path,
+            isSquare: false,
+          );
+
+          if (croppedPath != null) {
+            final bytes = await XFile(croppedPath).readAsBytes();
+            if (bytes.length > 900 * 1024) {
+              if (!context.mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('La imagen es demasiado grande. Intenta recortarla más o bajar la calidad.'),
+                  backgroundColor: Colors.redAccent,
+                ),
+              );
+              return;
+            }
+
+            final base64String = 'data:image/jpeg;base64,${base64Encode(bytes)}';
+            final fileName = pickedImage.name;
+            await FirebaseFirestore.instance.collection('pacientes').doc(patientId).update({
+              'medicalRecordFiles': FieldValue.arrayUnion([
+                {
+                  'file': base64String,
+                  'name': fileName,
+                }
+              ]),
+            });
+            if (!context.mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Imagen adjuntada exitosamente'), backgroundColor: Colors.green),
+            );
+          }
+        }
+      }
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al adjuntar archivo: $e'), backgroundColor: Colors.redAccent),
+      );
+    }
+  }
+
+  Future<void> _openPdfFile(BuildContext context, String base64Data, String fileName) async {
+    try {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(child: CircularProgressIndicator(color: Colors.teal)),
+      );
+
+      final cleanBase64 = base64Data.split(',').last;
+      final bytes = base64Decode(cleanBase64);
+      final tempDir = await getTemporaryDirectory();
+      final safeName = fileName.replaceAll(RegExp(r'[^\w\.\-]'), '_');
+      final file = File('${tempDir.path}/$safeName');
+      await file.writeAsBytes(bytes);
+
+      if (!context.mounted) return;
+      Navigator.pop(context);
+
+      final result = await OpenFilex.open(file.path);
+      if (result.type != ResultType.done) {
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('No se pudo abrir el PDF: ${result.message}'), backgroundColor: Colors.redAccent),
+        );
+      }
+    } catch (e) {
+      if (!context.mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al procesar PDF: $e'), backgroundColor: Colors.redAccent),
+      );
+    }
+  }
+
+  void _viewAttachedImage(BuildContext context, String base64Data) {
+    final cleanBase64 = base64Data.split(',').last;
+    final imageBytes = base64Decode(cleanBase64);
+
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(10),
+        child: Stack(
+          alignment: Alignment.topRight,
+          children: [
+            InteractiveViewer(
+              minScale: 0.5,
+              maxScale: 4.0,
+              child: Image.memory(
+                imageBytes,
+                fit: BoxFit.contain,
+              ),
+            ),
+            CircleAvatar(
+              backgroundColor: Colors.black54,
+              child: IconButton(
+                icon: const Icon(Icons.close, color: Colors.white),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

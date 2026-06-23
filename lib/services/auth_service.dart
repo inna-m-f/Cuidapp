@@ -77,7 +77,7 @@ class AuthService {
   }
 
   Future<void> signOut() async {
-    await NotificationService.cancelAllReminders();
+    await NotificationService.clearAllRemindersAndPreferences();
     await _auth.signOut();
     await SessionService().clear();
   }

@@ -392,16 +392,13 @@ class DatabaseService {
     final Map<String, dynamic>? data = doc.data() as Map<String, dynamic>?;
 
     if (data != null) {
-      final String category = (data['category'] ?? '').toString();
       final List<String> diasSemana =
           List<String>.from(data['diasSemana'] ?? []);
 
-      if (category == 'Medicamentos') {
-        await NotificationService.cancelMedicationReminder(
-          taskId: taskId,
-          diasSemana: diasSemana,
-        );
-      }
+      await NotificationService.cancelMedicationReminder(
+        taskId: taskId,
+        diasSemana: diasSemana,
+      );
     }
 
     await _db

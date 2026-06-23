@@ -1,7 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
+import 'package:image_picker/image_picker.dart';
+import '../../services/image_helper.dart';
 import '../../core/theme.dart';
 import '../../services/database_service.dart';
 import '../../services/auth_service.dart';
@@ -22,7 +25,9 @@ class _HomeScreenState extends State<HomeScreen> {
   final DatabaseService _dbService = DatabaseService();
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
-  late Stream<QuerySnapshot> _pacientesStream;
+  Stream<QuerySnapshot>? _pacientesStream;
+  String? _lastCentroId;
+  String? _lastActiveRole;
   List<String>? _lastSyncedPatientIds;
   final Map<String, StreamSubscription<QuerySnapshot>> _taskSubscriptions = {};
   StreamSubscription<DocumentSnapshot>? _userSubscription;
@@ -33,18 +38,12 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    final session = Provider.of<SessionProvider>(context, listen: false);
     _searchController.addListener(() {
       setState(() {
         _searchQuery = _searchController.text.trim();
       });
     });
-
-    final session = Provider.of<SessionProvider>(context, listen: false);
-    _pacientesStream = _dbService.getPacientesStream(
-      centroId: session.centroId,
-      rol: session.activeRole, 
-      uidCuidador: session.uid,
-    );
 
     // Escuchar nuevas invitaciones en tiempo real para lanzar notificación local
     _userSubscription = FirebaseFirestore.instance
@@ -52,52 +51,66 @@ class _HomeScreenState extends State<HomeScreen> {
         .doc(session.uid)
         .snapshots()
         .listen((snapshot) async {
-      if (!snapshot.exists) return;
-      final data = snapshot.data() as Map<String, dynamic>?;
-      if (data == null) return;
+          if (!snapshot.exists) return;
+          final data = snapshot.data() as Map<String, dynamic>?;
+          if (data == null) return;
 
-      final List<String> currentInvitations = List<String>.from(data['invitaciones'] ?? []);
-      final List<String> currentCentros = List<String>.from(data['centros'] ?? []);
-      final Map<String, dynamic> rawRoles = data['roles'] ?? {};
-      final Map<String, String> currentRoles = rawRoles.map((key, value) => MapEntry(key, value.toString()));
-
-      // Mantener SessionProvider sincronizado con los datos en tiempo real de Firestore
-      await session.updateSessionData(
-        centros: currentCentros,
-        roles: currentRoles,
-      );
-
-      // Gatillar reconstrucción para que el Drawer reaccione al cambio de centros
-      if (mounted) {
-        setState(() {});
-      }
-
-      final List<String> invitesToNotify = [];
-      if (_previousInvitations == null) {
-        invitesToNotify.addAll(currentInvitations);
-      } else {
-        invitesToNotify.addAll(currentInvitations.where((id) => !_previousInvitations!.contains(id)));
-      }
-
-      for (final cId in invitesToNotify) {
-        try {
-          final centerDoc = await FirebaseFirestore.instance.collection('centros').doc(cId).get();
-          String nombreCentro = cId;
-          if (centerDoc.exists) {
-            final cData = centerDoc.data() as Map<String, dynamic>?;
-            nombreCentro = cData?['nombre'] ?? cId;
-          }
-          await NotificationService.showImmediateNotification(
-            id: cId.hashCode,
-            title: 'Nueva Invitación de Centro',
-            body: 'Has recibido una invitación para unirte a "$nombreCentro".',
+          final List<String> currentInvitations = List<String>.from(
+            data['invitaciones'] ?? [],
           );
-        } catch (e) {
-          debugPrint('Error al mostrar notificación de invitación: $e');
-        }
-      }
-      _previousInvitations = currentInvitations;
-    });
+          final List<String> currentCentros = List<String>.from(
+            data['centros'] ?? [],
+          );
+          final Map<String, dynamic> rawRoles = data['roles'] ?? {};
+          final Map<String, String> currentRoles = rawRoles.map(
+            (key, value) => MapEntry(key, value.toString()),
+          );
+
+          // Mantener SessionProvider sincronizado con los datos en tiempo real de Firestore
+          await session.updateSessionData(
+            centros: currentCentros,
+            roles: currentRoles,
+          );
+
+          // Gatillar reconstrucción para que el Drawer reaccione al cambio de centros
+          if (mounted) {
+            setState(() {});
+          }
+
+          final List<String> invitesToNotify = [];
+          if (_previousInvitations == null) {
+            invitesToNotify.addAll(currentInvitations);
+          } else {
+            invitesToNotify.addAll(
+              currentInvitations.where(
+                (id) => !_previousInvitations!.contains(id),
+              ),
+            );
+          }
+
+          for (final cId in invitesToNotify) {
+            try {
+              final centerDoc = await FirebaseFirestore.instance
+                  .collection('centros')
+                  .doc(cId)
+                  .get();
+              String nombreCentro = cId;
+              if (centerDoc.exists) {
+                final cData = centerDoc.data() as Map<String, dynamic>?;
+                nombreCentro = cData?['nombre'] ?? cId;
+              }
+              await NotificationService.showImmediateNotification(
+                id: cId.hashCode,
+                title: 'Nueva Invitación de Centro',
+                body:
+                    'Has recibido una invitación para unirte a "$nombreCentro".',
+              );
+            } catch (e) {
+              debugPrint('Error al mostrar notificación de invitación: $e');
+            }
+          }
+          _previousInvitations = currentInvitations;
+        });
   }
 
   @override
@@ -113,10 +126,15 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
-  void _updateTaskSubscriptions(String uidCuidador, List<QueryDocumentSnapshot> patientDocs) {
+  void _updateTaskSubscriptions(
+    String uidCuidador,
+    List<QueryDocumentSnapshot> patientDocs,
+  ) {
     final List<String> currentIds = patientDocs.map((d) => d.id).toList();
 
-    final keysToRemove = _taskSubscriptions.keys.where((id) => !currentIds.contains(id)).toList();
+    final keysToRemove = _taskSubscriptions.keys
+        .where((id) => !currentIds.contains(id))
+        .toList();
     for (final id in keysToRemove) {
       _taskSubscriptions[id]?.cancel();
       _taskSubscriptions.remove(id);
@@ -131,7 +149,7 @@ class _HomeScreenState extends State<HomeScreen> {
             .collection('tareas')
             .snapshots()
             .listen((tasksSnapshot) {
-              NotificationService.syncCaregiverReminders(
+              NotificationService.syncCaregiverRemindersDebounced(
                 uidCuidador: uidCuidador,
                 patientDocs: patientDocs,
               );
@@ -139,11 +157,17 @@ class _HomeScreenState extends State<HomeScreen> {
         _taskSubscriptions[patientId] = subscription;
       }
     }
+
+    NotificationService.syncCaregiverRemindersDebounced(
+      uidCuidador: uidCuidador,
+      patientDocs: patientDocs,
+    );
   }
 
   String _removeDiacritics(String str) {
     var withDia = 'ÀÁÂÃÄÅàáâãäåÒÓÔÕÕÖØòóôõöøÈÉÊËèéêëðÇçÐdÌÍÎÏìíîïÙÚÛÜùúûüÑñÝýÿ';
-    var withoutDia = 'AAAAAAaaaaaaOOOOOOOooooooEEEEeeeeoCcDdIIIIiiiiUUUUuuuuNnYyy';
+    var withoutDia =
+        'AAAAAAaaaaaaOOOOOOOooooooEEEEeeeeoCcDdIIIIiiiiUUUUuuuuNnYyy';
 
     for (int i = 0; i < withDia.length; i++) {
       str = str.replaceAll(withDia[i], withoutDia[i]);
@@ -154,10 +178,20 @@ class _HomeScreenState extends State<HomeScreen> {
   IconData _getCategoryIcon(String category) {
     final lower = category.toLowerCase();
     if (lower.contains('medic')) return Icons.medication_rounded;
-    if (lower.contains('alimen') || lower.contains('comida') || lower.contains('desayuno') || lower.contains('almuerzo') || lower.contains('colación') || lower.contains('colacion') || lower.contains('once') || lower.contains('cena')) {
+    if (lower.contains('alimen') ||
+        lower.contains('comida') ||
+        lower.contains('desayuno') ||
+        lower.contains('almuerzo') ||
+        lower.contains('colación') ||
+        lower.contains('colacion') ||
+        lower.contains('once') ||
+        lower.contains('cena')) {
       return Icons.restaurant_rounded;
     }
-    if (lower.contains('higiene') || lower.contains('aseo') || lower.contains('baño') || lower.contains('bano')) {
+    if (lower.contains('higiene') ||
+        lower.contains('aseo') ||
+        lower.contains('baño') ||
+        lower.contains('bano')) {
       return Icons.bolt_rounded;
     }
     if (lower.contains('salida') || lower.contains('visita')) {
@@ -169,10 +203,20 @@ class _HomeScreenState extends State<HomeScreen> {
   Color _getCategoryColor(String category) {
     final lower = category.toLowerCase();
     if (lower.contains('medic')) return const Color(0xFF7B1FA2);
-    if (lower.contains('alimen') || lower.contains('comida') || lower.contains('desayuno') || lower.contains('almuerzo') || lower.contains('colación') || lower.contains('colacion') || lower.contains('once') || lower.contains('cena')) {
+    if (lower.contains('alimen') ||
+        lower.contains('comida') ||
+        lower.contains('desayuno') ||
+        lower.contains('almuerzo') ||
+        lower.contains('colación') ||
+        lower.contains('colacion') ||
+        lower.contains('once') ||
+        lower.contains('cena')) {
       return const Color(0xFF00C853);
     }
-    if (lower.contains('higiene') || lower.contains('aseo') || lower.contains('baño') || lower.contains('bano')) {
+    if (lower.contains('higiene') ||
+        lower.contains('aseo') ||
+        lower.contains('baño') ||
+        lower.contains('bano')) {
       return const Color(0xFF2979FF);
     }
     if (lower.contains('salida') || lower.contains('visita')) {
@@ -184,36 +228,87 @@ class _HomeScreenState extends State<HomeScreen> {
   String _getDiaSemanaActual() {
     final int weekday = DateTime.now().weekday;
     switch (weekday) {
-      case DateTime.monday: return 'lunes';
-      case DateTime.tuesday: return 'martes';
-      case DateTime.wednesday: return 'miercoles';
-      case DateTime.thursday: return 'jueves';
-      case DateTime.friday: return 'viernes';
-      case DateTime.saturday: return 'sabado';
-      case DateTime.sunday: return 'domingo';
-      default: return 'lunes';
+      case DateTime.monday:
+        return 'lunes';
+      case DateTime.tuesday:
+        return 'martes';
+      case DateTime.wednesday:
+        return 'miercoles';
+      case DateTime.thursday:
+        return 'jueves';
+      case DateTime.friday:
+        return 'viernes';
+      case DateTime.saturday:
+        return 'sabado';
+      case DateTime.sunday:
+        return 'domingo';
+      default:
+        return 'lunes';
     }
   }
 
   bool _isTaskScheduledForToday(Map<String, dynamic> data) {
-    final List<String> diasSemana = List<String>.from(data['diasSemana'] ?? []);
-    final String hoy = _getDiaSemanaActual();
-    
-    final normalizedDias = diasSemana.map((d) {
-      return d.trim().toLowerCase()
-          .replaceAll('á', 'a')
-          .replaceAll('é', 'e')
-          .replaceAll('í', 'i')
-          .replaceAll('ó', 'o')
-          .replaceAll('ú', 'u');
-    }).toList();
+    final String repeatType = data['repeatType']?.toString() ?? 'weekly_days';
 
-    return normalizedDias.contains(hoy);
+    final DateTime now = DateTime.now();
+    final DateTime today = DateTime(now.year, now.month, now.day);
+
+    DateTime startDate = today;
+    final rawStartDate = data['startDate'];
+
+    if (rawStartDate is Timestamp) {
+      final parsed = rawStartDate.toDate();
+      startDate = DateTime(parsed.year, parsed.month, parsed.day);
+    } else if (rawStartDate is String) {
+      final parsed = DateTime.tryParse(rawStartDate);
+      if (parsed != null) {
+        startDate = DateTime(parsed.year, parsed.month, parsed.day);
+      }
+    }
+
+    switch (repeatType) {
+      case 'once':
+        return today.isAtSameMomentAs(startDate);
+
+      case 'daily':
+        return true;
+
+      case 'every_n_days':
+        final int repeatEveryDays = data['repeatEveryDays'] is int
+            ? data['repeatEveryDays']
+            : int.tryParse(data['repeatEveryDays']?.toString() ?? '') ?? 0;
+
+        if (repeatEveryDays <= 0) return false;
+
+        final int difference = today.difference(startDate).inDays;
+        return difference >= 0 && difference % repeatEveryDays == 0;
+
+      case 'weekly_days':
+      default:
+        final List<String> diasSemana = List<String>.from(
+          data['diasSemana'] ?? [],
+        );
+        final String hoy = _getDiaSemanaActual();
+
+        final normalizedDias = diasSemana.map((d) {
+          return d
+              .trim()
+              .toLowerCase()
+              .replaceAll('á', 'a')
+              .replaceAll('é', 'e')
+              .replaceAll('í', 'i')
+              .replaceAll('ó', 'o')
+              .replaceAll('ú', 'u');
+        }).toList();
+
+        return normalizedDias.contains(hoy);
+    }
   }
 
   bool _isCompletedToday(Map<String, dynamic> data) {
     final DateTime nowDt = DateTime.now();
-    final String fechaActual = '${nowDt.year}-${nowDt.month.toString().padLeft(2, '0')}-${nowDt.day.toString().padLeft(2, '0')}';
+    final String fechaActual =
+        '${nowDt.year}-${nowDt.month.toString().padLeft(2, '0')}-${nowDt.day.toString().padLeft(2, '0')}';
     final completedDates = data['completedDates'];
 
     if (completedDates is Map<String, dynamic>) {
@@ -240,20 +335,31 @@ class _HomeScreenState extends State<HomeScreen> {
           final data = doc.data() as Map<String, dynamic>;
           if (!_isTaskScheduledForToday(data)) continue;
 
-          final category = (data['category'] ?? data['categoria'] ?? data['tipo'] ?? data['type'] ?? 'Medicamentos').toString();
+          final category =
+              (data['category'] ??
+                      data['categoria'] ??
+                      data['tipo'] ??
+                      data['type'] ??
+                      'Medicamentos')
+                  .toString();
 
           grouped.putIfAbsent(category, () => {'completed': 0, 'total': 0});
           grouped[category]!['total'] = grouped[category]!['total']! + 1;
 
           if (_isCompletedToday(data)) {
-            grouped[category]!['completed'] = grouped[category]!['completed']! + 1;
+            grouped[category]!['completed'] =
+                grouped[category]!['completed']! + 1;
           }
         }
 
         if (grouped.isEmpty) {
           return const Text(
             'Sin tareas para hoy',
-            style: TextStyle(fontSize: 12, color: Colors.black45, fontStyle: FontStyle.italic),
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.black45,
+              fontStyle: FontStyle.italic,
+            ),
           );
         }
 
@@ -272,7 +378,11 @@ class _HomeScreenState extends State<HomeScreen> {
               decoration: BoxDecoration(
                 color: color.withOpacity(0.12),
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: isComplete ? color.withOpacity(0.35) : Colors.transparent),
+                border: Border.all(
+                  color: isComplete
+                      ? color.withOpacity(0.35)
+                      : Colors.transparent,
+                ),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -281,7 +391,11 @@ class _HomeScreenState extends State<HomeScreen> {
                   const SizedBox(width: 5),
                   Text(
                     '$completed/$total',
-                    style: TextStyle(color: color, fontWeight: FontWeight.w800, fontSize: 12),
+                    style: TextStyle(
+                      color: color,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 12,
+                    ),
                   ),
                   if (isComplete) ...[
                     const SizedBox(width: 4),
@@ -305,8 +419,13 @@ class _HomeScreenState extends State<HomeScreen> {
       context: context,
       builder: (context) {
         return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: const Text('Agregar Nuevo Paciente', style: TextStyle(fontWeight: FontWeight.bold)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          title: const Text(
+            'Agregar Nuevo Paciente',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -314,19 +433,28 @@ class _HomeScreenState extends State<HomeScreen> {
                 TextField(
                   controller: nameCtrl,
                   textCapitalization: TextCapitalization.words,
-                  decoration: const InputDecoration(labelText: 'Nombre Completo', hintText: 'Ej: María González López'),
+                  decoration: const InputDecoration(
+                    labelText: 'Nombre Completo',
+                    hintText: 'Ej: María González López',
+                  ),
                 ),
                 const SizedBox(height: 15),
                 TextField(
                   controller: ageCtrl,
                   keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'Edad', hintText: 'Ej: 78'),
+                  decoration: const InputDecoration(
+                    labelText: 'Edad',
+                    hintText: 'Ej: 78',
+                  ),
                 ),
                 const SizedBox(height: 15),
                 TextField(
                   controller: roomCtrl,
                   textCapitalization: TextCapitalization.sentences,
-                  decoration: const InputDecoration(labelText: 'Habitación / Ubicación', hintText: 'Ej: Habitación 102'),
+                  decoration: const InputDecoration(
+                    labelText: 'Habitación / Ubicación',
+                    hintText: 'Ej: Habitación 102',
+                  ),
                 ),
               ],
             ),
@@ -334,7 +462,10 @@ class _HomeScreenState extends State<HomeScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
+              child: const Text(
+                'Cancelar',
+                style: TextStyle(color: Colors.grey),
+              ),
             ),
             ElevatedButton(
               onPressed: () async {
@@ -343,21 +474,30 @@ class _HomeScreenState extends State<HomeScreen> {
                 final room = roomCtrl.text.trim();
 
                 if (name.isEmpty || age.isEmpty || room.isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Por favor completa todos los campos')));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Por favor completa todos los campos'),
+                    ),
+                  );
                   return;
                 }
 
                 List<String> parts = name.split(' ');
                 String initials = '';
-                if (parts.isNotEmpty && parts[0].isNotEmpty) initials += parts[0][0];
-                if (parts.length > 1 && parts[1].isNotEmpty) initials += parts[1][0];
+                if (parts.isNotEmpty && parts[0].isNotEmpty)
+                  initials += parts[0][0];
+                if (parts.length > 1 && parts[1].isNotEmpty)
+                  initials += parts[1][0];
                 if (initials.isEmpty) initials = 'P';
 
                 String details = '$age años • $room';
 
                 try {
                   await _dbService.addPaciente(
-                    centroId: Provider.of<SessionProvider>(context, listen: false).centroId,
+                    centroId: Provider.of<SessionProvider>(
+                      context,
+                      listen: false,
+                    ).centroId,
                     name: name,
                     details: details,
                     initials: initials,
@@ -365,17 +505,35 @@ class _HomeScreenState extends State<HomeScreen> {
 
                   if (!context.mounted) return;
                   Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Paciente agregado correctamente'), backgroundColor: Colors.green));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Paciente agregado correctamente'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
                 } catch (e) {
                   if (!context.mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Error: $e'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
                 }
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF00C853),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
-              child: const Text('Guardar', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              child: const Text(
+                'Guardar',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ),
           ],
         );
@@ -383,64 +541,241 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _showEditPatientDialog(BuildContext context, String patientId, String currentName, String currentDetails) {
-    final TextEditingController nameCtrl = TextEditingController(text: currentName);
-    final TextEditingController detailsCtrl = TextEditingController(text: currentDetails);
+  void _showEditPatientDialog(
+    BuildContext context,
+    String patientId,
+    String currentName,
+    String currentDetails,
+  ) {
+    final TextEditingController nameCtrl = TextEditingController(
+      text: currentName,
+    );
+    final TextEditingController detailsCtrl = TextEditingController(
+      text: currentDetails,
+    );
 
     showDialog(
       context: context,
       builder: (context) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: const Text('Editar Paciente', style: TextStyle(fontWeight: FontWeight.bold)),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameCtrl,
-                textCapitalization: TextCapitalization.words,
-                decoration: const InputDecoration(labelText: 'Nombre Completo'),
+        return StreamBuilder<DocumentSnapshot>(
+          stream: FirebaseFirestore.instance
+              .collection('pacientes')
+              .doc(patientId)
+              .snapshots(),
+          builder: (context, snapshot) {
+            String currentPhotoUrl = '';
+            if (snapshot.hasData && snapshot.data!.exists) {
+              final data = snapshot.data!.data() as Map<String, dynamic>;
+              currentPhotoUrl = data['photoUrl'] ?? '';
+              if (nameCtrl.text.isEmpty && data['name'] != null) {
+                nameCtrl.text = data['name'];
+              }
+              if (detailsCtrl.text.isEmpty && data['details'] != null) {
+                detailsCtrl.text = data['details'];
+              }
+            }
+
+            return AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
               ),
-              const SizedBox(height: 15),
-              TextField(
-                controller: detailsCtrl,
-                textCapitalization: TextCapitalization.sentences,
-                decoration: const InputDecoration(labelText: 'Detalles (Edad / Habitación)'),
+              title: const Text(
+                'Editar Paciente',
+                style: TextStyle(fontWeight: FontWeight.bold),
               ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                final name = nameCtrl.text.trim();
-                final details = detailsCtrl.text.trim();
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Stack(
+                      alignment: Alignment.bottomRight,
+                      children: [
+                        CircleAvatar(
+                          radius: 50,
+                          backgroundColor: AppTheme.blue.withOpacity(0.1),
+                          backgroundImage: currentPhotoUrl.isNotEmpty
+                              ? (currentPhotoUrl.startsWith('data:image') ||
+                                        !currentPhotoUrl.startsWith('http')
+                                    ? MemoryImage(
+                                        base64Decode(
+                                          currentPhotoUrl.split(',').last,
+                                        ),
+                                      )
+                                    : NetworkImage(currentPhotoUrl)
+                                          as ImageProvider)
+                              : null,
+                          child: currentPhotoUrl.isEmpty
+                              ? const Icon(
+                                  Icons.person,
+                                  size: 50,
+                                  color: AppTheme.blue,
+                                )
+                              : null,
+                        ),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            CircleAvatar(
+                              radius: 18,
+                              backgroundColor: AppTheme.blue,
+                              child: IconButton(
+                                icon: const Icon(
+                                  Icons.camera_alt,
+                                  size: 16,
+                                  color: Colors.white,
+                                ),
+                                onPressed: () async {
+                                  final source =
+                                      await showModalBottomSheet<ImageSource>(
+                                        context: context,
+                                        builder: (context) => SafeArea(
+                                          child: Wrap(
+                                            children: [
+                                              ListTile(
+                                                leading: const Icon(
+                                                  Icons.photo_library,
+                                                ),
+                                                title: const Text('Galería'),
+                                                onTap: () => Navigator.pop(
+                                                  context,
+                                                  ImageSource.gallery,
+                                                ),
+                                              ),
+                                              ListTile(
+                                                leading: const Icon(
+                                                  Icons.camera_alt,
+                                                ),
+                                                title: const Text('Cámara'),
+                                                onTap: () => Navigator.pop(
+                                                  context,
+                                                  ImageSource.camera,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      );
 
-                if (name.isEmpty || details.isEmpty) return;
+                                  if (source != null) {
+                                    final picker = ImagePicker();
+                                    final XFile? pickedImage = await picker
+                                        .pickImage(
+                                          source: source,
+                                          imageQuality: 50,
+                                          maxWidth: 250,
+                                        );
+                                    if (pickedImage != null) {
+                                      final String? croppedPath =
+                                          await ImageHelper.cropImage(
+                                            sourcePath: pickedImage.path,
+                                            isSquare: true,
+                                          );
+                                      if (croppedPath != null) {
+                                        final bytes = await XFile(
+                                          croppedPath,
+                                        ).readAsBytes();
+                                        final base64Image =
+                                            'data:image/jpeg;base64,${base64Encode(bytes)}';
+                                        await FirebaseFirestore.instance
+                                            .collection('pacientes')
+                                            .doc(patientId)
+                                            .update({'photoUrl': base64Image});
+                                      }
+                                    }
+                                  }
+                                },
+                              ),
+                            ),
+                            if (currentPhotoUrl.isNotEmpty) ...[
+                              const SizedBox(width: 4),
+                              CircleAvatar(
+                                radius: 18,
+                                backgroundColor: Colors.redAccent,
+                                child: IconButton(
+                                  icon: const Icon(
+                                    Icons.delete,
+                                    size: 16,
+                                    color: Colors.white,
+                                  ),
+                                  onPressed: () async {
+                                    await FirebaseFirestore.instance
+                                        .collection('pacientes')
+                                        .doc(patientId)
+                                        .update({'photoUrl': ''});
+                                  },
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+                    TextField(
+                      controller: nameCtrl,
+                      textCapitalization: TextCapitalization.words,
+                      decoration: const InputDecoration(
+                        labelText: 'Nombre Completo',
+                      ),
+                    ),
+                    const SizedBox(height: 15),
+                    TextField(
+                      controller: detailsCtrl,
+                      textCapitalization: TextCapitalization.sentences,
+                      decoration: const InputDecoration(
+                        labelText: 'Detalles (Edad / Habitación)',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text(
+                    'Cancelar',
+                    style: TextStyle(color: Colors.grey),
+                  ),
+                ),
+                ElevatedButton(
+                  onPressed: () async {
+                    final name = nameCtrl.text.trim();
+                    final details = detailsCtrl.text.trim();
 
-                List<String> parts = name.split(' ');
-                String initials = '';
-                if (parts.isNotEmpty && parts[0].isNotEmpty) initials += parts[0][0];
-                if (parts.length > 1 && parts[1].isNotEmpty) initials += parts[1][0];
-                if (initials.isEmpty) initials = 'P';
+                    if (name.isEmpty || details.isEmpty) return;
 
-                try {
-                  await _dbService.updatePacienteData(patientId, {
-                    'name': name,
-                    'details': details,
-                    'initials': initials.toUpperCase(),
-                  });
-                  if (!context.mounted) return;
-                  Navigator.pop(context);
-                } catch (_) {}
-              },
-              style: ElevatedButton.styleFrom(backgroundColor: AppTheme.blue),
-              child: const Text('Actualizar', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-            ),
-          ],
+                    List<String> parts = name.split(' ');
+                    String initials = '';
+                    if (parts.isNotEmpty && parts[0].isNotEmpty)
+                      initials += parts[0][0];
+                    if (parts.length > 1 && parts[1].isNotEmpty)
+                      initials += parts[1][0];
+                    if (initials.isEmpty) initials = 'P';
+
+                    try {
+                      await _dbService.updatePacienteData(patientId, {
+                        'name': name,
+                        'details': details,
+                        'initials': initials.toUpperCase(),
+                      });
+                      if (!context.mounted) return;
+                      Navigator.pop(context);
+                    } catch (_) {}
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.blue,
+                  ),
+                  child: const Text(
+                    'Actualizar',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
         );
       },
     );
@@ -454,49 +789,131 @@ class _HomeScreenState extends State<HomeScreen> {
             child: ListView(
               padding: EdgeInsets.zero,
               children: [
-                UserAccountsDrawerHeader(
-                  decoration: const BoxDecoration(color: AppTheme.blue),
-                  accountName: Text(session.nombre, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-                  accountEmail: Text('RUT: ${AppTheme.formatRut(session.rut)}'),
-                  currentAccountPicture: CircleAvatar(
-                    backgroundColor: Colors.white,
-                    child: Text(
-                      session.nombre.isNotEmpty ? session.nombre[0].toUpperCase() : 'U',
-                      style: const TextStyle(fontSize: 24, color: AppTheme.blue, fontWeight: FontWeight.bold),
-                    ),
-                  ),
+                StreamBuilder<DocumentSnapshot>(
+                  stream: FirebaseFirestore.instance
+                      .collection('usuarios')
+                      .doc(session.uid)
+                      .snapshots(),
+                  builder: (context, snapshot) {
+                    String nombre = session.nombre;
+                    String photoUrl = "";
+                    if (snapshot.hasData && snapshot.data!.exists) {
+                      final data =
+                          snapshot.data!.data() as Map<String, dynamic>;
+                      nombre = data['nombre'] ?? session.nombre;
+                      photoUrl = data['photoUrl'] ?? "";
+                    }
+
+                    List<String> parts = nombre.split(' ');
+                    String initials = '';
+                    if (parts.isNotEmpty && parts[0].isNotEmpty)
+                      initials += parts[0][0];
+                    if (parts.length > 1 && parts[1].isNotEmpty)
+                      initials += parts[1][0];
+                    if (initials.isEmpty) initials = 'U';
+
+                    return UserAccountsDrawerHeader(
+                      decoration: const BoxDecoration(color: AppTheme.blue),
+                      accountName: Text(
+                        nombre,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 18,
+                        ),
+                      ),
+                      accountEmail: Text(
+                        'RUT: ${AppTheme.formatRut(session.rut)}',
+                      ),
+                      currentAccountPicture: CircleAvatar(
+                        backgroundColor: Colors.white,
+                        backgroundImage: photoUrl.isNotEmpty
+                            ? (photoUrl.startsWith('data:image') ||
+                                      !photoUrl.startsWith('http')
+                                  ? MemoryImage(
+                                      base64Decode(photoUrl.split(',').last),
+                                    )
+                                  : NetworkImage(photoUrl) as ImageProvider)
+                            : null,
+                        child: photoUrl.isEmpty
+                            ? Text(
+                                initials.toUpperCase(),
+                                style: const TextStyle(
+                                  fontSize: 24,
+                                  color: AppTheme.blue,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              )
+                            : null,
+                      ),
+                    );
+                  },
                 ),
+                ListTile(
+                  leading: const Icon(
+                    Icons.person_outline,
+                    color: Colors.black87,
+                  ),
+                  title: const Text('Mi Perfil'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _showEditProfileDialog(context, session);
+                  },
+                ),
+                const Divider(),
                 if (session.isRealAdmin) ...[
                   ListTile(
-                    leading: const Icon(Icons.people_alt_outlined, color: Colors.black87),
+                    leading: const Icon(
+                      Icons.people_alt_outlined,
+                      color: Colors.black87,
+                    ),
                     title: const Text('Gestionar Cuidadores'),
                     onTap: () {
                       Navigator.pop(context);
-                      Navigator.push(context, MaterialPageRoute(builder: (context) => const AdminCuidadoresScreen()));
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const AdminCuidadoresScreen(),
+                        ),
+                      );
                     },
                   ),
                   const Divider(),
                   ListTile(
                     leading: Icon(
-                      session.activeRole == 'admin' ? Icons.visibility_outlined : Icons.admin_panel_settings, 
-                      color: Colors.black87
+                      session.activeRole == 'admin'
+                          ? Icons.visibility_outlined
+                          : Icons.admin_panel_settings,
+                      color: Colors.black87,
                     ),
-                    title: Text(session.activeRole == 'admin' ? 'Cambiar a vista Cuidador' : 'Volver a vista Admin'),
+                    title: Text(
+                      session.activeRole == 'admin'
+                          ? 'Cambiar a vista Cuidador'
+                          : 'Volver a vista Admin',
+                    ),
                     subtitle: Text(
-                      session.activeRole == 'admin' ? 'Verás la app como un trabajador' : 'Recuperar controles de edición',
+                      session.activeRole == 'admin'
+                          ? 'Verás la app como un trabajador'
+                          : 'Recuperar controles de edición',
                       style: const TextStyle(fontSize: 12),
                     ),
                     onTap: () async {
                       Navigator.pop(context);
-                      String newRole = session.activeRole == 'admin' ? 'cuidador' : 'admin';
+                      String newRole = session.activeRole == 'admin'
+                          ? 'cuidador'
+                          : 'admin';
                       await session.setActiveRole(newRole);
-                      
+
                       if (!context.mounted) return;
-                      Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const HomeScreen()));
+                      Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const HomeScreen(),
+                        ),
+                      );
                     },
                   ),
                 ],
-                
+
                 if (session.centros.length > 1) ...[
                   const Divider(),
                   const Padding(
@@ -505,7 +922,11 @@ class _HomeScreenState extends State<HomeScreen> {
                       alignment: Alignment.centerLeft,
                       child: Text(
                         'Centros Disponibles',
-                        style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey, fontSize: 12),
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.grey,
+                          fontSize: 12,
+                        ),
                       ),
                     ),
                   ),
@@ -517,7 +938,12 @@ class _HomeScreenState extends State<HomeScreen> {
                         await session.setActiveCentro(cId);
                         if (!context.mounted) return;
                         Navigator.pop(context);
-                        Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const HomeScreen()));
+                        Navigator.pushReplacement(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const HomeScreen(),
+                          ),
+                        );
                       },
                     );
                   }).toList(),
@@ -525,13 +951,18 @@ class _HomeScreenState extends State<HomeScreen> {
 
                 // Sección de invitaciones pendientes dentro del Drawer
                 StreamBuilder<DocumentSnapshot>(
-                  stream: FirebaseFirestore.instance.collection('usuarios').doc(session.uid).snapshots(),
+                  stream: FirebaseFirestore.instance
+                      .collection('usuarios')
+                      .doc(session.uid)
+                      .snapshots(),
                   builder: (context, snapshot) {
                     if (!snapshot.hasData || !snapshot.data!.exists) {
                       return const SizedBox.shrink();
                     }
                     final data = snapshot.data!.data() as Map<String, dynamic>?;
-                    final List<String> invitaciones = List<String>.from(data?['invitaciones'] ?? []);
+                    final List<String> invitaciones = List<String>.from(
+                      data?['invitaciones'] ?? [],
+                    );
                     if (invitaciones.isEmpty) {
                       return const SizedBox.shrink();
                     }
@@ -540,81 +971,162 @@ class _HomeScreenState extends State<HomeScreen> {
                       children: [
                         const Divider(),
                         Padding(
-                          padding: const EdgeInsets.only(left: 16.0, top: 10, bottom: 5),
+                          padding: const EdgeInsets.only(
+                            left: 16.0,
+                            top: 10,
+                            bottom: 5,
+                          ),
                           child: Align(
                             alignment: Alignment.centerLeft,
                             child: Row(
                               children: [
                                 const Text(
                                   'Nuevas Invitaciones',
-                                  style: TextStyle(fontWeight: FontWeight.bold, color: AppTheme.green, fontSize: 12),
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: AppTheme.green,
+                                    fontSize: 12,
+                                  ),
                                 ),
                                 const SizedBox(width: 6),
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 2,
+                                  ),
                                   decoration: BoxDecoration(
                                     color: AppTheme.green,
                                     borderRadius: BorderRadius.circular(10),
                                   ),
                                   child: Text(
                                     '${invitaciones.length}',
-                                    style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
-                                )
+                                ),
                               ],
                             ),
                           ),
                         ),
                         ...invitaciones.map((cId) {
                           return FutureBuilder<DocumentSnapshot>(
-                            future: FirebaseFirestore.instance.collection('centros').doc(cId).get(),
+                            future: FirebaseFirestore.instance
+                                .collection('centros')
+                                .doc(cId)
+                                .get(),
                             builder: (context, centerSnap) {
                               String nombreCentro = session.getCenterName(cId);
-                              if (centerSnap.hasData && centerSnap.data!.exists) {
-                                final cData = centerSnap.data!.data() as Map<String, dynamic>?;
-                                final String fetchedName = cData?['nombre'] ?? cId;
-                                if (fetchedName != cId && fetchedName != nombreCentro) {
+                              if (centerSnap.hasData &&
+                                  centerSnap.data!.exists) {
+                                final cData =
+                                    centerSnap.data!.data()
+                                        as Map<String, dynamic>?;
+                                final String fetchedName =
+                                    cData?['nombre'] ?? cId;
+                                if (fetchedName != cId &&
+                                    fetchedName != nombreCentro) {
                                   nombreCentro = fetchedName;
                                   session.saveCenterName(cId, fetchedName);
                                 }
                               }
                               return ListTile(
                                 dense: true,
-                                leading: const Icon(Icons.mail_outline_rounded, color: AppTheme.green),
-                                title: Text(nombreCentro, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.black87)),
-                                subtitle: const Text('Toca para ver', style: TextStyle(fontSize: 11, color: Colors.black45)),
+                                leading: const Icon(
+                                  Icons.mail_outline_rounded,
+                                  color: AppTheme.green,
+                                ),
+                                title: Text(
+                                  nombreCentro,
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.black87,
+                                  ),
+                                ),
+                                subtitle: const Text(
+                                  'Toca para ver',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.black45,
+                                  ),
+                                ),
                                 onTap: () {
                                   showDialog(
                                     context: context,
                                     builder: (context) => AlertDialog(
-                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                                      title: Text('Invitación de $nombreCentro', style: const TextStyle(fontWeight: FontWeight.bold)),
-                                      content: Text('¿Deseas unirte al centro de cuidado "$nombreCentro"?'),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(20),
+                                      ),
+                                      title: Text(
+                                        'Invitación de $nombreCentro',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                      content: Text(
+                                        '¿Deseas unirte al centro de cuidado "$nombreCentro"?',
+                                      ),
                                       actions: [
                                         TextButton(
                                           onPressed: () async {
                                             Navigator.pop(context);
-                                            await DatabaseService().rejectInvitation(session.uid, cId);
+                                            await DatabaseService()
+                                                .rejectInvitation(
+                                                  session.uid,
+                                                  cId,
+                                                );
                                           },
-                                          child: const Text('Rechazar', style: TextStyle(color: Colors.redAccent)),
+                                          child: const Text(
+                                            'Rechazar',
+                                            style: TextStyle(
+                                              color: Colors.redAccent,
+                                            ),
+                                          ),
                                         ),
                                         ElevatedButton(
                                           onPressed: () async {
                                             Navigator.pop(context);
-                                            await DatabaseService().acceptInvitation(session.uid, cId);
+                                            await DatabaseService()
+                                                .acceptInvitation(
+                                                  session.uid,
+                                                  cId,
+                                                );
                                             // Cambiar automáticamente al nuevo centro aceptado
                                             await session.setActiveCentro(cId);
                                             if (context.mounted) {
-                                              Navigator.pop(context); // Cerrar el Drawer
-                                              Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const HomeScreen()));
+                                              Navigator.pop(
+                                                context,
+                                              ); // Cerrar el Drawer
+                                              Navigator.pushReplacement(
+                                                context,
+                                                MaterialPageRoute(
+                                                  builder: (context) =>
+                                                      const HomeScreen(),
+                                                ),
+                                              );
                                             }
                                           },
                                           style: ElevatedButton.styleFrom(
                                             backgroundColor: AppTheme.green,
-                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(10),
+                                            ),
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 16,
+                                              vertical: 8,
+                                            ),
                                           ),
-                                          child: const Text('Aceptar', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                                          child: const Text(
+                                            'Aceptar',
+                                            style: TextStyle(
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
                                         ),
                                       ],
                                     ),
@@ -631,75 +1143,133 @@ class _HomeScreenState extends State<HomeScreen> {
 
                 // Estado del Centro (resumen de pacientes y cuidadores en tiempo real)
                 FutureBuilder<DocumentSnapshot>(
-                  future: FirebaseFirestore.instance.collection('centros').doc(session.centroId).get(),
+                  future: FirebaseFirestore.instance
+                      .collection('centros')
+                      .doc(session.centroId)
+                      .get(),
                   builder: (context, centroSnap) {
-                    String nombreCentro = session.getCenterName(session.centroId);
+                    String nombreCentro = session.getCenterName(
+                      session.centroId,
+                    );
                     if (centroSnap.hasData && centroSnap.data!.exists) {
-                      final cData = centroSnap.data!.data() as Map<String, dynamic>?;
-                      final String fetchedName = cData?['nombre'] ?? session.centroId;
-                      if (fetchedName != session.centroId && fetchedName != nombreCentro) {
+                      final cData =
+                          centroSnap.data!.data() as Map<String, dynamic>?;
+                      final String fetchedName =
+                          cData?['nombre'] ?? session.centroId;
+                      if (fetchedName != session.centroId &&
+                          fetchedName != nombreCentro) {
                         nombreCentro = fetchedName;
                         session.saveCenterName(session.centroId, fetchedName);
                       }
                     }
                     return StreamBuilder<QuerySnapshot>(
-                      stream: FirebaseFirestore.instance.collection('pacientes').where('centroId', isEqualTo: session.centroId).snapshots(),
+                      stream: FirebaseFirestore.instance
+                          .collection('pacientes')
+                          .where('centroId', isEqualTo: session.centroId)
+                          .snapshots(),
                       builder: (context, pacientesSnap) {
                         return StreamBuilder<QuerySnapshot>(
-                          stream: FirebaseFirestore.instance.collection('usuarios').where('centros', arrayContains: session.centroId).snapshots(),
+                          stream: FirebaseFirestore.instance
+                              .collection('usuarios')
+                              .where('centros', arrayContains: session.centroId)
+                              .snapshots(),
                           builder: (context, cuidadoresSnap) {
-                            final int totalPacientes = pacientesSnap.hasData ? pacientesSnap.data!.docs.length : 0;
-                            final int totalCuidadores = cuidadoresSnap.hasData ? cuidadoresSnap.data!.docs.length : 0;
-                            
+                            final int totalPacientes = pacientesSnap.hasData
+                                ? pacientesSnap.data!.docs.length
+                                : 0;
+                            final int totalCuidadores = cuidadoresSnap.hasData
+                                ? cuidadoresSnap.data!.docs.length
+                                : 0;
+
                             return Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16.0,
+                                vertical: 12.0,
+                              ),
                               child: Container(
                                 padding: const EdgeInsets.all(12),
                                 decoration: BoxDecoration(
                                   color: AppTheme.blue.withOpacity(0.05),
                                   borderRadius: BorderRadius.circular(15),
-                                  border: Border.all(color: AppTheme.blue.withOpacity(0.1), width: 1),
+                                  border: Border.all(
+                                    color: AppTheme.blue.withOpacity(0.1),
+                                    width: 1,
+                                  ),
                                 ),
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
                                       'Estado: $nombreCentro',
-                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: AppTheme.blue),
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 12,
+                                        color: AppTheme.blue,
+                                      ),
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                     ),
                                     const SizedBox(height: 8),
                                     Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
                                       children: [
                                         Row(
                                           children: [
-                                            const Icon(Icons.people_outline_rounded, size: 16, color: Colors.black54),
+                                            const Icon(
+                                              Icons.people_outline_rounded,
+                                              size: 16,
+                                              color: Colors.black54,
+                                            ),
                                             const SizedBox(width: 8),
-                                            const Text('Pacientes Activos', style: TextStyle(fontSize: 11, color: Colors.black54)),
+                                            const Text(
+                                              'Pacientes Activos',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                color: Colors.black54,
+                                              ),
+                                            ),
                                           ],
                                         ),
                                         Text(
                                           '$totalPacientes',
-                                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.black87),
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 12,
+                                            color: Colors.black87,
+                                          ),
                                         ),
                                       ],
                                     ),
                                     const SizedBox(height: 6),
                                     Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
                                       children: [
                                         Row(
                                           children: [
-                                            const Icon(Icons.badge_outlined, size: 16, color: Colors.black54),
+                                            const Icon(
+                                              Icons.badge_outlined,
+                                              size: 16,
+                                              color: Colors.black54,
+                                            ),
                                             const SizedBox(width: 8),
-                                            const Text('Cuidadores Activos', style: TextStyle(fontSize: 11, color: Colors.black54)),
+                                            const Text(
+                                              'Cuidadores Activos',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                color: Colors.black54,
+                                              ),
+                                            ),
                                           ],
                                         ),
                                         Text(
                                           '$totalCuidadores',
-                                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.black87),
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 12,
+                                            color: Colors.black87,
+                                          ),
                                         ),
                                       ],
                                     ),
@@ -716,14 +1286,22 @@ class _HomeScreenState extends State<HomeScreen> {
 
                 const Divider(),
                 ListTile(
-                  leading: const Icon(Icons.help_outline_rounded, color: Colors.black87),
+                  leading: const Icon(
+                    Icons.help_outline_rounded,
+                    color: Colors.black87,
+                  ),
                   title: const Text('Soporte y Ayuda'),
                   onTap: () {
                     showDialog(
                       context: context,
                       builder: (context) => AlertDialog(
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                        title: const Text('Soporte de CuidaFlow', style: TextStyle(fontWeight: FontWeight.bold)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        title: const Text(
+                          'Soporte de CuidaFlow',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
                         content: const Text(
                           '¿Tienes dudas, problemas o sugerencias?\n\nEscríbenos a:\nsoporte@cuidaflow.com\n\n¡Estaremos listos para asistirte!',
                           style: TextStyle(height: 1.4),
@@ -731,7 +1309,10 @@ class _HomeScreenState extends State<HomeScreen> {
                         actions: [
                           TextButton(
                             onPressed: () => Navigator.pop(context),
-                            child: const Text('Cerrar', style: TextStyle(fontWeight: FontWeight.bold)),
+                            child: const Text(
+                              'Cerrar',
+                              style: TextStyle(fontWeight: FontWeight.bold),
+                            ),
                           ),
                         ],
                       ),
@@ -741,41 +1322,80 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
           ),
-          
+
           const Divider(height: 1),
           ListTile(
             leading: const Icon(Icons.logout, color: Colors.redAccent),
-            title: const Text('Cerrar Sesión', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+            title: const Text(
+              'Cerrar Sesión',
+              style: TextStyle(
+                color: Colors.redAccent,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
             onTap: () {
               showDialog(
                 context: context,
                 builder: (context) => AlertDialog(
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                  title: const Text('Cerrar Sesión', style: TextStyle(fontWeight: FontWeight.bold)),
-                  content: const Text('¿Estás seguro de que deseas cerrar sesión en CuidaFlow?'),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  title: const Text(
+                    'Cerrar Sesión',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  content: const Text(
+                    '¿Estás seguro de que deseas cerrar sesión en CuidaFlow?',
+                  ),
                   actions: [
                     TextButton(
                       onPressed: () => Navigator.pop(context),
-                      child: const Text('Cancelar', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
+                      child: const Text(
+                        'Cancelar',
+                        style: TextStyle(
+                          color: Colors.grey,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ),
                     ElevatedButton(
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.redAccent,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
                       ),
                       onPressed: () async {
-                        Navigator.pop(context); // Cerrar diálogo
-                        await Provider.of<SessionProvider>(context, listen: false).clear();
+                        // 1. Capturamos el navigator antes de alterar el estado de los providers
+                        final navigator = Navigator.of(context);
+
+                        // 2. Cerramos el diálogo de confirmación inmediatamente
+                        navigator.pop();
+
+                        // 3. Limpiamos primero las alarmas y desautenticamos en Firebase
                         await AuthService().signOut();
-                        if (!context.mounted) return;
-                        Navigator.pop(context); // Cerrar el Drawer
-                        Navigator.pushAndRemoveUntil(
+
+                        // 4. Limpiamos el Provider (esto cambiará la UI de fondo al indicador de carga)
+                        Provider.of<SessionProvider>(
                           context,
-                          MaterialPageRoute(builder: (context) => const LoginScreen()),
+                          listen: false,
+                        ).clear();
+
+                        // 5. Redirigimos usando el navigator respaldado (evitando que el context.mounted falle)
+                        navigator.pushAndRemoveUntil(
+                          MaterialPageRoute(
+                            builder: (context) => const LoginScreen(),
+                          ),
                           (route) => false,
                         );
                       },
-                      child: const Text('Cerrar Sesión', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                      child: const Text(
+                        'Cerrar Sesión',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ),
                   ],
                 ),
@@ -799,9 +1419,19 @@ class _HomeScreenState extends State<HomeScreen> {
 
     if (session.uid.isEmpty || session.centroId.isEmpty) {
       return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(color: AppTheme.blue),
-        ),
+        body: Center(child: CircularProgressIndicator(color: AppTheme.blue)),
+      );
+    }
+
+    if (_lastCentroId != session.centroId ||
+        _lastActiveRole != session.activeRole ||
+        _pacientesStream == null) {
+      _lastCentroId = session.centroId;
+      _lastActiveRole = session.activeRole;
+      _pacientesStream = _dbService.getPacientesStream(
+        centroId: session.centroId,
+        rol: session.activeRole,
+        uidCuidador: session.uid,
       );
     }
 
@@ -810,13 +1440,17 @@ class _HomeScreenState extends State<HomeScreen> {
       drawer: _buildDrawer(context, session),
       appBar: AppBar(
         title: FutureBuilder<DocumentSnapshot>(
-          future: FirebaseFirestore.instance.collection('centros').doc(session.centroId).get(),
+          future: FirebaseFirestore.instance
+              .collection('centros')
+              .doc(session.centroId)
+              .get(),
           builder: (context, snapshot) {
             String nombreCentro = session.getCenterName(session.centroId);
             if (snapshot.hasData && snapshot.data!.exists) {
               final data = snapshot.data!.data() as Map<String, dynamic>?;
               final String fetchedName = data?['nombre'] ?? session.centroId;
-              if (fetchedName != session.centroId && fetchedName != nombreCentro) {
+              if (fetchedName != session.centroId &&
+                  fetchedName != nombreCentro) {
                 nombreCentro = fetchedName;
                 session.saveCenterName(session.centroId, fetchedName);
               }
@@ -827,11 +1461,19 @@ class _HomeScreenState extends State<HomeScreen> {
               children: [
                 const Text(
                   'Pacientes del Centro',
-                  style: TextStyle(fontWeight: FontWeight.bold, color: AppTheme.white, fontSize: 16),
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.white,
+                    fontSize: 16,
+                  ),
                 ),
                 Text(
                   nombreCentro,
-                  style: const TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.normal),
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 11,
+                    fontWeight: FontWeight.normal,
+                  ),
                 ),
               ],
             );
@@ -844,15 +1486,18 @@ class _HomeScreenState extends State<HomeScreen> {
               padding: const EdgeInsets.only(right: 12.0),
               child: Center(
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
-                    color: session.activeRole == 'admin' 
-                        ? Colors.white.withOpacity(0.18) 
+                    color: session.activeRole == 'admin'
+                        ? Colors.white.withOpacity(0.18)
                         : Colors.orangeAccent.withOpacity(0.9),
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
-                      color: session.activeRole == 'admin' 
-                          ? Colors.white30 
+                      color: session.activeRole == 'admin'
+                          ? Colors.white30
                           : Colors.orange,
                       width: 1,
                     ),
@@ -861,19 +1506,19 @@ class _HomeScreenState extends State<HomeScreen> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(
-                        session.activeRole == 'admin' 
-                            ? Icons.admin_panel_settings 
-                            : Icons.visibility_rounded, 
-                        size: 14, 
-                        color: Colors.white
+                        session.activeRole == 'admin'
+                            ? Icons.admin_panel_settings
+                            : Icons.visibility_rounded,
+                        size: 14,
+                        color: Colors.white,
                       ),
                       const SizedBox(width: 4),
                       Text(
                         session.activeRole == 'admin' ? 'Admin' : 'Cuidador',
                         style: const TextStyle(
-                          fontSize: 11, 
-                          fontWeight: FontWeight.bold, 
-                          color: Colors.white
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
                         ),
                       ),
                     ],
@@ -888,7 +1533,13 @@ class _HomeScreenState extends State<HomeScreen> {
               onPressed: () => _showAddPatientDialog(context),
               backgroundColor: const Color(0xFF00C853),
               icon: const Icon(Icons.add, color: Colors.white),
-              label: const Text('Nuevo Paciente', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              label: const Text(
+                'Nuevo Paciente',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             )
           : null,
       body: Column(
@@ -909,9 +1560,18 @@ class _HomeScreenState extends State<HomeScreen> {
                         onPressed: () => _searchController.clear(),
                       )
                     : null,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(25), borderSide: BorderSide.none),
-                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(25), borderSide: BorderSide.none),
-                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(25), borderSide: const BorderSide(color: AppTheme.blue, width: 2)),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(25),
+                  borderSide: BorderSide.none,
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(25),
+                  borderSide: BorderSide.none,
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(25),
+                  borderSide: const BorderSide(color: AppTheme.blue, width: 2),
+                ),
               ),
             ),
           ),
@@ -920,14 +1580,22 @@ class _HomeScreenState extends State<HomeScreen> {
               stream: _pacientesStream,
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator(color: AppTheme.blue));
+                  return const Center(
+                    child: CircularProgressIndicator(color: AppTheme.blue),
+                  );
                 }
 
                 if (snapshot.hasError) {
-                  return const Center(child: Text('Error al cargar la información', style: TextStyle(color: Colors.redAccent)));
+                  return const Center(
+                    child: Text(
+                      'Error al cargar la información',
+                      style: TextStyle(color: Colors.redAccent),
+                    ),
+                  );
                 }
 
-                final isOffline = snapshot.hasData && snapshot.data!.metadata.isFromCache;
+                final isOffline =
+                    snapshot.hasData && snapshot.data!.metadata.isFromCache;
                 if (isOffline) {
                   if (_offlineTimer == null && !_showOfflineNotifier.value) {
                     _offlineTimer = Timer(const Duration(seconds: 3), () {
@@ -947,13 +1615,27 @@ class _HomeScreenState extends State<HomeScreen> {
                 final offlineBanner = Container(
                   width: double.infinity,
                   color: Colors.orange.shade100,
-                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 15),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 8,
+                    horizontal: 15,
+                  ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.cloud_off, size: 16, color: Colors.orange.shade800),
+                      Icon(
+                        Icons.cloud_off,
+                        size: 16,
+                        color: Colors.orange.shade800,
+                      ),
                       const SizedBox(width: 8),
-                      Text('Modo sin conexión. Datos locales.', style: TextStyle(color: Colors.orange.shade800, fontSize: 12, fontWeight: FontWeight.bold)),
+                      Text(
+                        'Modo sin conexión. Datos locales.',
+                        style: TextStyle(
+                          color: Colors.orange.shade800,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ],
                   ),
                 );
@@ -967,10 +1649,25 @@ class _HomeScreenState extends State<HomeScreen> {
                 );
 
                 if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                  if (_lastSyncedPatientIds == null ||
+                      _lastSyncedPatientIds!.isNotEmpty) {
+                    _lastSyncedPatientIds = [];
+                  }
+                  _updateTaskSubscriptions(session.uid, []);
                   return Column(
                     children: [
                       offlineBannerWidget,
-                      const Expanded(child: Center(child: Text('No hay pacientes registrados.', style: TextStyle(color: Colors.black54, fontSize: 16)))),
+                      const Expanded(
+                        child: Center(
+                          child: Text(
+                            'No hay pacientes registrados.',
+                            style: TextStyle(
+                              color: Colors.black54,
+                              fontSize: 16,
+                            ),
+                          ),
+                        ),
+                      ),
                     ],
                   );
                 }
@@ -978,9 +1675,12 @@ class _HomeScreenState extends State<HomeScreen> {
                 var docs = snapshot.data!.docs;
 
                 final List<String> currentIds = docs.map((d) => d.id).toList();
-                final bool listsAreEqual = _lastSyncedPatientIds != null &&
+                final bool listsAreEqual =
+                    _lastSyncedPatientIds != null &&
                     _lastSyncedPatientIds!.length == currentIds.length &&
-                    _lastSyncedPatientIds!.every((id) => currentIds.contains(id));
+                    _lastSyncedPatientIds!.every(
+                      (id) => currentIds.contains(id),
+                    );
 
                 if (!listsAreEqual) {
                   _lastSyncedPatientIds = currentIds;
@@ -988,24 +1688,40 @@ class _HomeScreenState extends State<HomeScreen> {
                 _updateTaskSubscriptions(session.uid, docs);
 
                 if (_searchQuery.isNotEmpty) {
-                  String queryNormalized = _removeDiacritics(_searchQuery.toLowerCase());
+                  String queryNormalized = _removeDiacritics(
+                    _searchQuery.toLowerCase(),
+                  );
                   docs = docs.where((doc) {
                     var data = doc.data() as Map<String, dynamic>;
                     String name = data['name'] ?? '';
-                    String nameNormalized = _removeDiacritics(name.toLowerCase());
+                    String nameNormalized = _removeDiacritics(
+                      name.toLowerCase(),
+                    );
                     return nameNormalized.contains(queryNormalized);
                   }).toList();
                 }
 
                 Widget mainContent;
                 if (docs.isEmpty) {
-                  mainContent = const Expanded(child: Center(child: Text('No se encontraron coincidencias.', style: TextStyle(color: Colors.black54, fontSize: 16))));
+                  mainContent = const Expanded(
+                    child: Center(
+                      child: Text(
+                        'No se encontraron coincidencias.',
+                        style: TextStyle(color: Colors.black54, fontSize: 16),
+                      ),
+                    ),
+                  );
                 } else {
                   mainContent = Expanded(
                     child: ListView.separated(
-                      padding: const EdgeInsets.only(left: 20.0, right: 20.0, bottom: 80.0),
+                      padding: const EdgeInsets.only(
+                        left: 20.0,
+                        right: 20.0,
+                        bottom: 80.0,
+                      ),
                       itemCount: docs.length,
-                      separatorBuilder: (context, index) => const SizedBox(height: 15),
+                      separatorBuilder: (context, index) =>
+                          const SizedBox(height: 15),
                       itemBuilder: (context, index) {
                         var doc = docs[index];
                         var data = doc.data() as Map<String, dynamic>;
@@ -1015,19 +1731,23 @@ class _HomeScreenState extends State<HomeScreen> {
                         String name = data['name'] ?? 'Sin nombre';
                         String details = data['details'] ?? '';
                         String status = data['status'] ?? 'Estable';
+                        String photoUrl = data['photoUrl'] ?? '';
 
-                        return _buildPatientCard(context, patientId: patientId, initials: initials, name: name, details: details, status: status);
+                        return _buildPatientCard(
+                          context,
+                          patientId: patientId,
+                          initials: initials,
+                          name: name,
+                          details: details,
+                          status: status,
+                          photoUrl: photoUrl,
+                        );
                       },
                     ),
                   );
                 }
 
-                return Column(
-                  children: [
-                    offlineBannerWidget,
-                    mainContent,
-                  ],
-                );
+                return Column(children: [offlineBannerWidget, mainContent]);
               },
             ),
           ),
@@ -1036,14 +1756,29 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildPatientCard(BuildContext context, {required String patientId, required String initials, required String name, required String details, required String status}) {
+  Widget _buildPatientCard(
+    BuildContext context, {
+    required String patientId,
+    required String initials,
+    required String name,
+    required String details,
+    required String status,
+    required String photoUrl,
+  }) {
     final session = context.read<SessionProvider>();
 
     Widget card = InkWell(
       onTap: () {
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (context) => PatientDetailScreen(patientId: patientId, initials: initials, name: name, details: details)),
+          MaterialPageRoute(
+            builder: (context) => PatientDetailScreen(
+              patientId: patientId,
+              initials: initials,
+              name: name,
+              details: details,
+            ),
+          ),
         );
       },
       borderRadius: BorderRadius.circular(20),
@@ -1051,7 +1786,13 @@ class _HomeScreenState extends State<HomeScreen> {
         decoration: BoxDecoration(
           color: AppTheme.white,
           borderRadius: BorderRadius.circular(20),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 5))],
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 5),
+            ),
+          ],
         ),
         padding: const EdgeInsets.all(20.0),
         child: Row(
@@ -1060,7 +1801,22 @@ class _HomeScreenState extends State<HomeScreen> {
             CircleAvatar(
               radius: 25,
               backgroundColor: AppTheme.blue.withOpacity(0.1),
-              child: Text(initials, style: const TextStyle(color: AppTheme.blue, fontWeight: FontWeight.bold, fontSize: 18)),
+              backgroundImage: photoUrl.isNotEmpty
+                  ? (photoUrl.startsWith('data:image') ||
+                            !photoUrl.startsWith('http')
+                        ? MemoryImage(base64Decode(photoUrl.split(',').last))
+                        : NetworkImage(photoUrl) as ImageProvider)
+                  : null,
+              child: photoUrl.isEmpty
+                  ? Text(
+                      initials,
+                      style: const TextStyle(
+                        color: AppTheme.blue,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 18,
+                      ),
+                    )
+                  : null,
             ),
             const SizedBox(width: 15),
             Expanded(
@@ -1070,21 +1826,44 @@ class _HomeScreenState extends State<HomeScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Expanded(child: Text(name, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87))),
+                      Expanded(
+                        child: Text(
+                          name,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87,
+                          ),
+                        ),
+                      ),
                       const SizedBox(width: 8),
                       if (session.isAdmin)
                         IconButton(
-                          icon: const Icon(Icons.edit, color: AppTheme.blue, size: 20),
+                          icon: const Icon(
+                            Icons.edit,
+                            color: AppTheme.blue,
+                            size: 20,
+                          ),
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints(),
-                          onPressed: () => _showEditPatientDialog(context, patientId, name, details),
+                          onPressed: () => _showEditPatientDialog(
+                            context,
+                            patientId,
+                            name,
+                            details,
+                          ),
                         ),
                       const SizedBox(width: 8),
                       _buildStatusBadge(status),
                     ],
                   ),
                   const SizedBox(height: 4),
-                  Text(details, style: const TextStyle(fontSize: 14, color: Colors.black54)),
+                  Text(
+                    details,
+                    style: const TextStyle(fontSize: 14, color: Colors.black54),
+                  ),
                   const SizedBox(height: 12),
                   _buildPatientTaskProgress(patientId),
                 ],
@@ -1101,7 +1880,10 @@ class _HomeScreenState extends State<HomeScreen> {
       key: Key(patientId),
       direction: DismissDirection.endToStart,
       background: Container(
-        decoration: BoxDecoration(color: Colors.redAccent, borderRadius: BorderRadius.circular(20)),
+        decoration: BoxDecoration(
+          color: Colors.redAccent,
+          borderRadius: BorderRadius.circular(20),
+        ),
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.only(right: 25.0),
         child: const Icon(Icons.delete, color: Colors.white, size: 28),
@@ -1110,15 +1892,39 @@ class _HomeScreenState extends State<HomeScreen> {
         return await showDialog<bool>(
           context: context,
           builder: (context) => AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-            title: const Text('Eliminar Paciente', style: TextStyle(fontWeight: FontWeight.bold)),
-            content: Text('¿Estás seguro de que deseas eliminar a $name? Se borrarán de forma permanente todos sus registros y tareas.'),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(15),
+            ),
+            title: const Text(
+              'Eliminar Paciente',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            content: Text(
+              '¿Estás seguro de que deseas eliminar a $name? Se borrarán de forma permanente todos sus registros y tareas.',
+            ),
             actions: [
-              TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar', style: TextStyle(color: Colors.grey))),
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text(
+                  'Cancelar',
+                  style: TextStyle(color: Colors.grey),
+                ),
+              ),
               ElevatedButton(
                 onPressed: () => Navigator.pop(context, true),
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
-                child: const Text('Eliminar', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.redAccent,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                child: const Text(
+                  'Eliminar',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ),
             ],
           ),
@@ -1128,10 +1934,17 @@ class _HomeScreenState extends State<HomeScreen> {
         try {
           await _dbService.deletePaciente(patientId);
           if (!context.mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Paciente $name eliminado con éxito')));
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Paciente $name eliminado con éxito')),
+          );
         } catch (e) {
           if (!context.mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error al eliminar paciente: $e'), backgroundColor: Colors.red));
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error al eliminar paciente: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
         }
       },
       child: card,
@@ -1156,8 +1969,236 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(color: bgColor, borderRadius: BorderRadius.circular(12)),
-      child: Text(status, style: TextStyle(color: textColor, fontWeight: FontWeight.bold, fontSize: 12)),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        status,
+        style: TextStyle(
+          color: textColor,
+          fontWeight: FontWeight.bold,
+          fontSize: 12,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _updateProfilePhotoSource(
+    BuildContext context,
+    String uid,
+  ) async {
+    final ImageSource? source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_library),
+              title: const Text('Galería'),
+              onTap: () => Navigator.pop(context, ImageSource.gallery),
+            ),
+            ListTile(
+              leading: const Icon(Icons.camera_alt),
+              title: const Text('Cámara'),
+              onTap: () => Navigator.pop(context, ImageSource.camera),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (source != null) {
+      final picker = ImagePicker();
+      final XFile? pickedImage = await picker.pickImage(
+        source: source,
+        imageQuality: 50,
+        maxWidth: 250,
+      );
+      if (pickedImage != null) {
+        final String? croppedPath = await ImageHelper.cropImage(
+          sourcePath: pickedImage.path,
+          isSquare: true,
+        );
+        if (croppedPath != null) {
+          final bytes = await XFile(croppedPath).readAsBytes();
+          final base64Image = 'data:image/jpeg;base64,${base64Encode(bytes)}';
+          await FirebaseFirestore.instance
+              .collection('usuarios')
+              .doc(uid)
+              .update({'photoUrl': base64Image});
+        }
+      }
+    }
+  }
+
+  void _showEditProfileDialog(BuildContext context, SessionProvider session) {
+    final TextEditingController nameCtrl = TextEditingController(
+      text: session.nombre,
+    );
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StreamBuilder<DocumentSnapshot>(
+          stream: FirebaseFirestore.instance
+              .collection('usuarios')
+              .doc(session.uid)
+              .snapshots(),
+          builder: (context, snapshot) {
+            String currentPhotoUrl = '';
+            if (snapshot.hasData && snapshot.data!.exists) {
+              final data = snapshot.data!.data() as Map<String, dynamic>;
+              currentPhotoUrl = data['photoUrl'] ?? '';
+              if (nameCtrl.text.isEmpty && data['nombre'] != null) {
+                nameCtrl.text = data['nombre'];
+              }
+            }
+
+            return AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              title: const Text(
+                'Editar Mi Perfil',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Stack(
+                      alignment: Alignment.bottomRight,
+                      children: [
+                        CircleAvatar(
+                          radius: 50,
+                          backgroundColor: AppTheme.blue.withOpacity(0.1),
+                          backgroundImage: currentPhotoUrl.isNotEmpty
+                              ? (currentPhotoUrl.startsWith('data:image') ||
+                                        !currentPhotoUrl.startsWith('http')
+                                    ? MemoryImage(
+                                        base64Decode(
+                                          currentPhotoUrl.split(',').last,
+                                        ),
+                                      )
+                                    : NetworkImage(currentPhotoUrl)
+                                          as ImageProvider)
+                              : null,
+                          child: currentPhotoUrl.isEmpty
+                              ? const Icon(
+                                  Icons.person,
+                                  size: 50,
+                                  color: AppTheme.blue,
+                                )
+                              : null,
+                        ),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            CircleAvatar(
+                              radius: 18,
+                              backgroundColor: AppTheme.blue,
+                              child: IconButton(
+                                icon: const Icon(
+                                  Icons.camera_alt,
+                                  size: 16,
+                                  color: Colors.white,
+                                ),
+                                onPressed: () => _updateProfilePhotoSource(
+                                  context,
+                                  session.uid,
+                                ),
+                              ),
+                            ),
+                            if (currentPhotoUrl.isNotEmpty) ...[
+                              const SizedBox(width: 4),
+                              CircleAvatar(
+                                radius: 18,
+                                backgroundColor: Colors.redAccent,
+                                child: IconButton(
+                                  icon: const Icon(
+                                    Icons.delete,
+                                    size: 16,
+                                    color: Colors.white,
+                                  ),
+                                  onPressed: () async {
+                                    await FirebaseFirestore.instance
+                                        .collection('usuarios')
+                                        .doc(session.uid)
+                                        .update({'photoUrl': ''});
+                                  },
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+                    TextField(
+                      controller: nameCtrl,
+                      textCapitalization: TextCapitalization.words,
+                      decoration: const InputDecoration(
+                        labelText: 'Nombre Completo',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text(
+                    'Cancelar',
+                    style: TextStyle(color: Colors.grey),
+                  ),
+                ),
+                ElevatedButton(
+                  onPressed: () async {
+                    final newName = nameCtrl.text.trim();
+                    if (newName.isEmpty) return;
+
+                    try {
+                      await FirebaseFirestore.instance
+                          .collection('usuarios')
+                          .doc(session.uid)
+                          .update({'nombre': newName});
+                      await session.updateNombre(newName);
+                      if (!context.mounted) return;
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Perfil actualizado correctamente'),
+                          backgroundColor: Colors.green,
+                        ),
+                      );
+                    } catch (e) {
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Error: $e'),
+                          backgroundColor: Colors.redAccent,
+                        ),
+                      );
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.blue,
+                  ),
+                  child: const Text(
+                    'Guardar',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 }
@@ -1179,10 +2220,13 @@ class CenterListTile extends StatelessWidget {
     final session = context.watch<SessionProvider>();
     final isSelected = centroId == activeCentroId;
     return FutureBuilder<DocumentSnapshot>(
-      future: FirebaseFirestore.instance.collection('centros').doc(centroId).get(),
+      future: FirebaseFirestore.instance
+          .collection('centros')
+          .doc(centroId)
+          .get(),
       builder: (context, snapshot) {
         String nombreCentro = session.getCenterName(centroId);
-        
+
         if (snapshot.hasData && snapshot.data!.exists) {
           final data = snapshot.data!.data() as Map<String, dynamic>?;
           final String fetchedName = data?['nombre'] ?? centroId;
@@ -1204,8 +2248,12 @@ class CenterListTile extends StatelessWidget {
               color: isSelected ? AppTheme.green : Colors.black87,
             ),
           ),
-          trailing: isSelected 
-              ? const Icon(Icons.check_circle_rounded, color: AppTheme.green, size: 20)
+          trailing: isSelected
+              ? const Icon(
+                  Icons.check_circle_rounded,
+                  color: AppTheme.green,
+                  size: 20,
+                )
               : null,
           onTap: onTap,
         );
