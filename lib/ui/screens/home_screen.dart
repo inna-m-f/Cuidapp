@@ -797,11 +797,13 @@ class _HomeScreenState extends State<HomeScreen> {
                   builder: (context, snapshot) {
                     String nombre = session.nombre;
                     String photoUrl = "";
+                    String email = "";
                     if (snapshot.hasData && snapshot.data!.exists) {
                       final data =
                           snapshot.data!.data() as Map<String, dynamic>;
                       nombre = data['nombre'] ?? session.nombre;
                       photoUrl = data['photoUrl'] ?? "";
+                      email = data['email'] ?? data['correo'] ?? "";
                     }
 
                     List<String> parts = nombre.split(' ');
@@ -821,8 +823,25 @@ class _HomeScreenState extends State<HomeScreen> {
                           fontSize: 18,
                         ),
                       ),
-                      accountEmail: Text(
-                        'RUT: ${AppTheme.formatRut(session.rut)}',
+                      accountEmail: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'RUT: ${AppTheme.formatRut(session.rut)}',
+                            style: const TextStyle(color: Colors.white, fontSize: 14),
+                          ),
+                          if (email.isNotEmpty) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              email,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                color: Colors.white70,
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                       currentAccountPicture: CircleAvatar(
                         backgroundColor: Colors.white,

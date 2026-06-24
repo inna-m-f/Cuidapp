@@ -99,7 +99,7 @@ class NotificationService {
     final int medicationMinute = parsedTime['minute']!;
 
     final String cleanCategory = category.trim().toLowerCase();
-    String titleText = 'Alerta de tarea';
+    String titleText = 'Notificación de tarea';
     String bodyText =
         'Quedan 5 minutos para la tarea "$medicationName" de $patientName.';
     String overdueTitle = 'Tarea atrasada';
@@ -107,7 +107,7 @@ class NotificationService {
         'La tarea "$medicationName" para $patientName está atrasada (debía realizarse a las $time).';
 
     if (cleanCategory == 'medicamentos') {
-      titleText = 'Alerta de medicamento';
+      titleText = 'Notificación de medicamento';
       bodyText =
           'Quedan 5 minutos para administrar $medicationName a $patientName.';
       overdueTitle = 'Medicamento atrasado';
@@ -115,14 +115,14 @@ class NotificationService {
           'El medicamento $medicationName para $patientName está atrasado (debía administrarse a las $time).';
     } else if (cleanCategory == 'alimentación' ||
         cleanCategory == 'alimentacion') {
-      titleText = 'Alerta de alimentación';
+      titleText = 'Notificación de alimentación';
       bodyText =
           'Quedan 5 minutos para la comida de $patientName: $medicationName.';
       overdueTitle = 'Comida atrasada';
       overdueBody =
           'La comida "$medicationName" para $patientName está atrasada (debía servirse a las $time).';
     } else if (cleanCategory == 'higiene') {
-      titleText = 'Alerta de higiene';
+      titleText = 'Notificación de higiene';
       bodyText =
           'Quedan 5 minutos para la higiene de $patientName: $medicationName.';
       overdueTitle = 'Higiene atrasada';
@@ -131,7 +131,7 @@ class NotificationService {
     } else if (cleanCategory == 'salidas / visitas' ||
         cleanCategory == 'salidas' ||
         cleanCategory == 'visitas') {
-      titleText = 'Alerta de visitas/salidas';
+      titleText = 'Notificación de visitas/salidas';
       bodyText =
           'Quedan 5 minutos para la visita/salida de $patientName: $medicationName.';
       overdueTitle = 'Visita/Salida atrasada';
