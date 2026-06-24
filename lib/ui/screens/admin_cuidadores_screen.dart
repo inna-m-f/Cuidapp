@@ -137,6 +137,7 @@ class _AdminCuidadoresScreenState extends State<AdminCuidadoresScreen> {
   void _showPhotoOptions({
     required String uid,
     required String nombre,
+    required String currentPhotoUrl,
   }) {
     showModalBottomSheet(
       context: context,
@@ -196,6 +197,44 @@ class _AdminCuidadoresScreenState extends State<AdminCuidadoresScreen> {
                     );
                   },
                 ),
+                if (currentPhotoUrl.isNotEmpty)
+                  ListTile(
+                    leading: const Icon(
+                      Icons.delete,
+                      color: Colors.redAccent,
+                    ),
+                    title: const Text(
+                      'Eliminar foto',
+                      style: TextStyle(
+                        color: Colors.redAccent,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    onTap: () async {
+                      Navigator.pop(context);
+                      try {
+                        await _dbService.updateUserPhoto(
+                          userId: uid,
+                          photoUrl: '',
+                        );
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Foto eliminada correctamente'),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
+                      } catch (e) {
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Error al eliminar foto: $e'),
+                            backgroundColor: Colors.redAccent,
+                          ),
+                        );
+                      }
+                    },
+                  ),
               ],
             ),
           ),
@@ -840,6 +879,7 @@ class _AdminCuidadoresScreenState extends State<AdminCuidadoresScreen> {
                           _showPhotoOptions(
                             uid: uid,
                             nombre: nombre,
+                            currentPhotoUrl: photoUrl,
                           );
                         },
                         borderRadius: BorderRadius.circular(40),

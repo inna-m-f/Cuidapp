@@ -1759,6 +1759,7 @@ final groupedTasks = _groupTasksByCategory(docsToday);
               isChecked: isCompletedToday, 
               isAdmin: session.isAdmin, 
               caregiverName: caregiverName, 
+              completedByUid: completedByUid,
               color: color,
               rawData: data,
             );
@@ -1775,12 +1776,23 @@ final groupedTasks = _groupTasksByCategory(docsToday);
     required bool isChecked,
     required bool isAdmin,
     required String? caregiverName,
+    required String? completedByUid,
     required Color color,
     required Map<String, dynamic> rawData,
   }) {
     final row = InkWell(
       onTap: isAdmin ? null : () {
-        _dbService.updateTaskStatus(widget.patientId, taskId, !isChecked, Provider.of<SessionProvider>(context, listen: false).uid);
+        final currentUid = Provider.of<SessionProvider>(context, listen: false).uid;
+        if (isChecked && completedByUid != null && completedByUid != currentUid) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Solo puedes desmarcar tareas que tú mismo completaste.'),
+              backgroundColor: Colors.orangeAccent,
+            ),
+          );
+          return;
+        }
+        _dbService.updateTaskStatus(widget.patientId, taskId, !isChecked, currentUid);
       },
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13),
