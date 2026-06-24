@@ -1750,7 +1750,9 @@ final groupedTasks = _groupTasksByCategory(docsToday);
             final data = taskDoc.data() as Map<String, dynamic>;
             final isCompletedToday = _isCompletedToday(data);
             final completedByUid = _completedByToday(data);
-            final caregiverName = completedByUid != null ? caregiverMap[completedByUid] : null;
+            final caregiverName = completedByUid != null
+                ? (caregiverMap[completedByUid] ?? (completedByUid == 'unknown' ? 'Registro perdido' : 'Cuidador eliminado'))
+                : null;
 
             return _buildTaskRow(
               taskId: taskDoc.id, 

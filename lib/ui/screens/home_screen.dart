@@ -829,7 +829,10 @@ class _HomeScreenState extends State<HomeScreen> {
                         children: [
                           Text(
                             'RUT: ${AppTheme.formatRut(session.rut)}',
-                            style: const TextStyle(color: Colors.white, fontSize: 14),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
+                            ),
                           ),
                           if (email.isNotEmpty) ...[
                             const SizedBox(height: 2),
