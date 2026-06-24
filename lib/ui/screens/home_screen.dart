@@ -1318,11 +1318,11 @@ class _HomeScreenState extends State<HomeScreen> {
                           borderRadius: BorderRadius.circular(20),
                         ),
                         title: const Text(
-                          'Soporte de CuidaFlow',
+                          'Soporte de CuidaBit',
                           style: TextStyle(fontWeight: FontWeight.bold),
                         ),
                         content: const Text(
-                          '¿Tienes dudas, problemas o sugerencias?\n\nEscríbenos a:\nsoporte@cuidaflow.com\n\n¡Estaremos listos para asistirte!',
+                          '¿Tienes dudas, problemas o sugerencias?\n\nEscríbenos a:\nsoporte@cuidabit.com\n\n¡Estaremos listos para asistirte!',
                           style: TextStyle(height: 1.4),
                         ),
                         actions: [
@@ -1364,7 +1364,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     style: TextStyle(fontWeight: FontWeight.bold),
                   ),
                   content: const Text(
-                    '¿Estás seguro de que deseas cerrar sesión en CuidaFlow?',
+                    '¿Estás seguro de que deseas cerrar sesión en CuidaBit?',
                   ),
                   actions: [
                     TextButton(
@@ -1423,7 +1423,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           const SizedBox(height: 10),
           const Text(
-            'CuidaFlow v1.0.0',
+            'CuidaBit v1.0.0',
             style: TextStyle(color: Colors.black38, fontSize: 11),
           ),
           const SizedBox(height: 15),

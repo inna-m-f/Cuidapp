@@ -353,7 +353,7 @@ class _AdminCuidadoresScreenState extends State<AdminCuidadoresScreen> {
                           enabled: !_isSaving,
                           decoration: const InputDecoration(
                             labelText: 'Correo Electrónico',
-                            hintText: 'Ej: juan@correo.com',
+                            hintText: 'Ej: juan@cuidabit.com',
                           ),
                         ),
                         const SizedBox(height: 15),

@@ -364,7 +364,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  const Text('CuidaFlow', style: TextStyle(fontSize: 42, fontWeight: FontWeight.bold, color: AppTheme.white)),
+                  const Text('CuidaBit', style: TextStyle(fontSize: 42, fontWeight: FontWeight.bold, color: AppTheme.white)),
                   const SizedBox(height: 10),
                   const Text('Gestión de cuidado de adultos\nmayores', textAlign: TextAlign.center, style: TextStyle(fontSize: 16, color: AppTheme.white, height: 1.3)),
                 ],
@@ -387,7 +387,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       TextField(
                         controller: _emailController,
                         keyboardType: TextInputType.emailAddress,
-                        decoration: const InputDecoration(hintText: 'ejemplo@correo.com', hintStyle: TextStyle(color: Colors.black38)),
+                        decoration: const InputDecoration(hintText: 'ejemplo@cuidabit.com', hintStyle: TextStyle(color: Colors.black38)),
                       ),
                       const SizedBox(height: 25),
                       const Text('Contraseña', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.black87)),

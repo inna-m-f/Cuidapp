@@ -35,7 +35,7 @@ class CuidApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'CuidaFlow',
+      title: 'CuidaBit',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.theme,
       home: const LoginScreen(),
